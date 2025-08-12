@@ -114,12 +114,32 @@ export interface TraderInfo {
   transactionCount: number;
 }
 
+/**
+ * VaultService - Manages vault operations with rate limiting to prevent network issues
+ * 
+ * Rate Limiting Configuration:
+ * - CALL_DELAY: 200ms between individual contract calls
+ * - BATCH_DELAY: 500ms before batch operations
+ * - ADDITIONAL_DELAY: 300ms for additional queries
+ * 
+ * This prevents rate limiting and ensures reliable contract interactions.
+ */
 export class VaultService {
   private client: any = null;
   private signer: any = null;
   private vaultContractId: ContractId | null = null;
   private tokenContractId: ContractId | null = null;
   private ethersProvider: ethers.providers.JsonRpcProvider | null = null;
+  
+  // Rate limiting configuration
+  private readonly CALL_DELAY = 5000; // 200ms between individual calls
+  private readonly BATCH_DELAY = 5000; // 500ms before batch operations
+  private readonly ADDITIONAL_DELAY = 300; // 300ms for additional queries
+  
+  // Helper function to add delay between calls to prevent rate limiting
+  private async delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
   /**
    * Force reconnect HashConnect
@@ -335,9 +355,14 @@ export class VaultService {
         throw new Error('Failed to get signer from HashConnectService');
       }
       
+      // ✅ Khởi tạo client
+      const { Client } = await import('@hashgraph/sdk');
+      this.client = Client.forNetwork(HEDERA_CONFIG.network.name);
+      
       console.log('🔧 Provider initialized successfully:', {
         signer: !!this.signer,
         signerType: typeof this.signer,
+        client: !!this.client,
         connectionState
       });
       
@@ -476,6 +501,10 @@ export class VaultService {
       if (!this.vaultContractId) {
         throw new Error('Vault contract not initialized');
       }
+      
+      // Add delay to prevent rate limiting
+      await this.delay(this.CALL_DELAY);
+      
       const vaultEvm = this.hederaContractIdToEvmAddress(this.vaultContractId.toString());
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       console.log('📖 Reading runTimestamp via Ethers.js JSON-RPC...');
@@ -581,6 +610,7 @@ export class VaultService {
       // console.log('🔍 vaultClosed:', await vaultContract.vaultClosed());
 
       // Get all vault state in parallel using ethers.js (same approach as working test)
+      console.log('🚀 Executing parallel batch queries...');
       const [runTimestamp, stopTimestamp, token1Address, token2Address, totalShares, maxShareholders, manager, depositsClosed, vaultClosed] = await Promise.all([
         vaultContract.runTimestamp(),
         vaultContract.stopTimestamp(),
@@ -592,10 +622,18 @@ export class VaultService {
         vaultContract.depositsClosed(),
         vaultContract.vaultClosed()
       ]);
+      
+      console.log('✅ Parallel batch queries completed');
 
-      // Get additional state
+      // Get additional state with delays
+      console.log('⏳ Getting additional state with delays...');
+      await this.delay(this.ADDITIONAL_DELAY);
+      
       const totalBalance = await vaultContract.totalBalance ? await vaultContract.totalBalance() : totalShares;
+      await this.delay(this.CALL_DELAY);
+      
       const shareholderCount = await vaultContract.getShareholderCount ? await vaultContract.getShareholderCount() : 1;
+      await this.delay(this.BATCH_DELAY);
       
       // Calculate current time-based states
       const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -1097,7 +1135,7 @@ export class VaultService {
         .setFunction(TOKEN_ABI.allowance, params);
 
       // Read-only call - no signer needed, no gas cost
-      const response = await query.execute(this.client);
+      const response = await query.execute(this.signer);
       const allowance = response.getUint256(0) || Long.ZERO;
       
       console.log('📖 Allowance result:', {
@@ -1121,7 +1159,7 @@ export class VaultService {
         throw new Error('Token contract not initialized');
       }
 
-      console.log('📖 Reading token balance via balanceOf (no gas, no signing required)...');
+      console.log('📖 Reading token balance via ethers.js balanceOf...');
 
       // Convert Hedera account ID to EVM address
       const evmUserAddress = this.hederaToEvmAddress(userAddress);
@@ -1132,22 +1170,21 @@ export class VaultService {
         evmUserAddress
       });
 
-      const { ContractCallQuery, ContractFunctionParameters } = await import('@hashgraph/sdk');
-      const params = new ContractFunctionParameters()
-        .addAddress(evmUserAddress);
-      
-      const query = new ContractCallQuery()
-        .setContractId(this.tokenContractId)
-        .setFunction(TOKEN_ABI.balanceOf, params);
+      // Use ethers.js instead of SDK
+      const provider = this.getEthersProvider();
+      const contract = new ethers.Contract(
+        this.hederaContractIdToEvmAddress(this.tokenContractId.toString()),
+        ['function balanceOf(address owner) view returns (uint256)'],
+        provider
+      );
 
-      // Read-only call - no signer needed, no gas cost
-      const response = await query.execute(this.client);
-      const balance = response.getUint256(0) || Long.ZERO;
+      // Read-only call - no gas cost
+      const balance = await contract.balanceOf(evmUserAddress);
       
-      console.log('📖 Token balance result (contract call):', {
+      console.log('📖 Token balance result (ethers.js):', {
         userAddress,
         evmUserAddress,
-        balanceSmallest: Number(balance),
+        balanceSmallest: balance.toString(),
         balanceInUnits: Number(balance) / Math.pow(10, this.getTokenDecimals())
       });
       
@@ -1273,6 +1310,8 @@ export class VaultService {
       }
 
       // Lấy vault state để kiểm tra withdrawalsEnabled
+      console.log('🔍 Loading vault state in checkWithdrawStatus:', vaultAddress);
+
       const vaultState = await this.getVaultInfo(vaultAddress);
       
       if (vaultState.withdrawalsEnabled) {

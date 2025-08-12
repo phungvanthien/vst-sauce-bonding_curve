@@ -49,140 +49,100 @@ export const useVault = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [withdrawStatus, setWithdrawStatus] = useState<WithdrawStatus | null>(null);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [isLoadingVaultData, setIsLoadingVaultData] = useState(false);
   
   // Helper function to add delay between operations to prevent rate limiting
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   // Load vault data từ smart contract
   const loadVaultData = useCallback(async () => {
-    if (!user) return;
+    if (!user || isLoadingVaultData) return;
 
-    setIsRefreshing(true);
+    setIsLoadingVaultData(true);
     try {
       const userAddress = user.walletType === 'hashpack' ? user.accountId : user.walletAddress;
       
-      // Khởi tạo contracts nếu chưa có (token1Address will be auto-detected from vault)
-      if (vaults.length > 0) {
-        await vaultService.initializeContracts(vaults[0].vaultAddress);
+      // Chỉ load real vault data
+      const realVault = vaults.find(v => v.isReal);
+      if (!realVault) {
+        console.log('ℹ️ No real vault found, skipping real-time updates');
+        return;
       }
+
+      console.log('�� Loading real vault data:', realVault.name);
       
-      // Load vault states từ smart contract with rate limiting
-      const newVaultStates: Record<string, VaultState> = {};
+      // Initialize contracts for real vault
+      await vaultService.initializeContracts(realVault.vaultAddress);
       
-      for (let i = 0; i < vaults.length; i++) {
-        const vault = vaults[i];
-        try {
-          console.log(`🔍 Loading vault state ${i + 1}/${vaults.length}:`, vault.name);
-          
-          // Add delay between vault updates to prevent rate limiting
-          if (i > 0) {
-            console.log('⏳ Waiting 5000ms before next vault update...');
-            await delay(5000);
-          }
-          
-          const vaultState = await vaultService.getVaultInfo(vault.vaultAddress);
-          newVaultStates[vault.vaultAddress] = vaultState;
-          
-          // Cập nhật vault data với dữ liệu thực
-          setVaults(prev => prev.map(v => 
-            v.id === vault.id 
-              ? {
-                  ...v,
-                  totalShares: vaultState.totalShares,
-                  shareholderCount: vaultState.shareholderCount,
-                  depositsClosed: vaultState.depositsClosed,
-                  withdrawalsEnabled: vaultState.withdrawalsEnabled,
-                  totalDeposits: vaultState.totalBalance
-                }
-              : v
-          ));
-          
-          console.log(`✅ Vault ${vault.name} state updated successfully`);
-          
-        } catch (error) {
-          console.error(`Error loading vault ${vault.name}:`, error);
-        }
-      }
+      // Get real vault state
+      const vaultState = await vaultService.getVaultInfo(realVault.vaultAddress);
       
-      setVaultStates(newVaultStates);
+      // Update vault states
+      setVaultStates(prev => ({
+        ...prev,
+        [realVault.vaultAddress]: vaultState
+      }));
       
-      // Add delay before loading user data to ensure vault states are fully loaded
-      console.log('⏳ Waiting 300ms before loading user data...');
-      await delay(300);
+      // Update real vault data
+      setVaults(prev => prev.map(v => 
+        v.id === realVault.id 
+          ? {
+              ...v,
+              totalShares: vaultState.totalShares,
+              shareholderCount: vaultState.shareholderCount,
+              depositsClosed: vaultState.depositsClosed,
+              withdrawalsEnabled: vaultState.withdrawalsEnabled,
+              totalDeposits: vaultState.totalBalance
+            }
+          : v
+      ));
       
-      // Load user token balance using token1Address from vault state
-      if (vaults.length > 0 && newVaultStates[vaults[0].vaultAddress]) {
-        const vaultState = newVaultStates[vaults[0].vaultAddress];
-        const token1Address = vaultState.token1Address;
-        
-        if (token1Address) {
-          console.log('💰 Loading user balance with token1 from vault:', {
-            vaultAddress: vaults[0].vaultAddress,
-            token1Address: token1Address,
-            configTokenAddress: vaults[0].tokenAddress
-          });
-          
-          const balanceSmallest = await vaultService.getTokenBalance(
-            token1Address,  // Use dynamic token1Address from vault
-            userAddress
-          );
-          // Convert from smallest units to normal units for UI display
-          const tokenDecimals = vaults[0].token === 'HBAR' ? 8 : 6; // HBAR=8, USDC=6
-          const balanceInUnits = balanceSmallest / Math.pow(10, tokenDecimals);
-          
-          console.log('💰 User token balance loaded:', {
-            balanceSmallest,
-            balanceInUnits,
-            token: vaults[0].token,
-            decimals: tokenDecimals,
-            token1Address: token1Address
-          });
-          
-          setUserTokenBalance(balanceInUnits);
-        } else {
-          console.warn('⚠️ No token1Address found in vault state, using fallback');
-          // Fallback to config tokenAddress if token1Address not available
-          const balanceSmallest = await vaultService.getTokenBalance(
-            vaults[0].tokenAddress, 
-            userAddress
-          );
-          const tokenDecimals = vaults[0].token === 'HBAR' ? 8 : 6;
-          const balanceInUnits = balanceSmallest / Math.pow(10, tokenDecimals);
-          setUserTokenBalance(balanceInUnits);
-        }
+      console.log('✅ Real vault updated successfully');
+      
+      // Load user token balance only for real vault
+      if (vaultState.token1Address) {
+        const balanceSmallest = await vaultService.getTokenBalanceContract(
+          vaultState.token1Address,
+          userAddress
+        );
+        const tokenDecimals = realVault.token === 'HBAR' ? 8 : 6;
+        const balanceInUnits = balanceSmallest / Math.pow(10, tokenDecimals);
+        setUserTokenBalance(balanceInUnits);
       }
       
     } catch (error) {
-      console.error('Error loading vault data:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load vault data",
-        variant: "destructive"
-      });
+      console.error('Error loading real vault data:', error);
     } finally {
-      setIsRefreshing(false);
+      setIsLoadingVaultData(false);
     }
-  }, [user, vaults]);
+  }, [user, vaults, isLoadingVaultData]);
 
   // Load user shares và total deposited cho vault được chọn
   const loadUserData = useCallback(async () => {
     if (!selectedVault || !user) return;
 
+    // Skip real contract calls for fake vaults
+    if (!selectedVault.isReal) {
+      console.log(`🎭 Fake vault ${selectedVault.name} - using mockup user data`);
+      
+      // Use mockup data for fake vaults
+      const mockShares = Math.floor(Math.random() * 1000) + 100;
+      const mockTotalDeposited = mockShares * (selectedVault.totalDeposits / selectedVault.totalShares);
+      
+      setUserShares(mockShares);
+      setUserTotalDeposited(mockTotalDeposited);
+      
+      console.log('✅ Fake vault user data loaded:', { shares: mockShares, totalDeposited: mockTotalDeposited });
+      return;
+    }
+    
+    // Only load real data for real vaults
+    console.log('👤 Loading real user data for vault:', selectedVault.name);
+    
     try {
-      console.log('👤 Loading user data for vault:', selectedVault.name);
-      
-      // Add delay before loading user data to prevent rate limiting
-      console.log('⏳ Waiting 200ms before loading user data...');
-      await delay(200);
-      
-      // Initialize contracts nếu là real vault
-      if (selectedVault.isReal) {
-        console.log('🔧 Initializing contracts for real vault...');
-        await vaultService.initializeContracts(selectedVault.vaultAddress, selectedVault.tokenAddress);
-      }
+      await vaultService.initializeContracts(selectedVault.vaultAddress, selectedVault.tokenAddress);
       
       const userAddress = user.walletType === 'hashpack' ? user.accountId : user.walletAddress;
-      console.log('👤 User address:', userAddress);
       
       const [shares, totalDeposited] = await Promise.all([
         vaultService.getUserShares(selectedVault.vaultAddress, userAddress),
@@ -192,9 +152,9 @@ export const useVault = () => {
       setUserShares(shares);
       setUserTotalDeposited(totalDeposited);
       
-      console.log('✅ User data loaded:', { shares, totalDeposited });
+      console.log('✅ Real user data loaded:', { shares, totalDeposited });
     } catch (error) {
-      console.error('❌ Error loading user data:', error);
+      console.error('❌ Error loading real user data:', error);
       setUserShares(0);
       setUserTotalDeposited(0);
     }
@@ -205,6 +165,40 @@ export const useVault = () => {
     if (!selectedVault) return;
 
     try {
+      // Skip real contract calls for fake vaults
+      if (!selectedVault.isReal) {
+        console.log(`🎭 Fake vault ${selectedVault.name} - using mockup top traders data`);
+        
+        // Use mockup data for fake vaults
+        const mockTraders: TraderInfo[] = [
+          {
+            address: "0x1234567890123456789012345678901234567890",
+            shares: 50000,
+            totalDeposited: 50000,
+            lastTransaction: Date.now() - 86400000, // 1 day ago
+            transactionCount: 15
+          },
+          {
+            address: "0x2345678901234567890123456789012345678901",
+            shares: 35000,
+            totalDeposited: 35000,
+            lastTransaction: Date.now() - 172800000, // 2 days ago
+            transactionCount: 12
+          },
+          {
+            address: "0x3456789012345678901234567890123456789012",
+            shares: 25000,
+            totalDeposited: 25000,
+            lastTransaction: Date.now() - 259200000, // 3 days ago
+            transactionCount: 8
+          }
+        ];
+        
+        setTopTraders(mockTraders);
+        console.log('✅ Fake vault top traders loaded:', mockTraders);
+        return;
+      }
+      
       const traders = await vaultService.getTopTraders(selectedVault.vaultAddress);
       setTopTraders(traders);
     } catch (error) {
@@ -218,6 +212,46 @@ export const useVault = () => {
     if (!selectedVault) return;
 
     try {
+      // Skip real contract calls for fake vaults
+      if (!selectedVault.isReal) {
+        console.log(`🎭 Fake vault ${selectedVault.name} - using mockup transaction history`);
+        
+        // Use mockup data for fake vaults
+        const mockTransactions: Transaction[] = [
+          {
+            hash: "0x1234567890123456789012345678901234567890123456789012345678901234",
+            from: "0x1234567890123456789012345678901234567890",
+            to: selectedVault.vaultAddress,
+            value: "1000000000000000000", // 1 token in wei
+            timestamp: Date.now() - 3600000, // 1 hour ago
+            type: "deposit",
+            blockNumber: 12345678
+          },
+          {
+            hash: "0x2345678901234567890123456789012345678901234567890123456789012345",
+            from: selectedVault.vaultAddress,
+            to: "0x2345678901234567890123456789012345678901",
+            value: "500000000000000000", // 0.5 token in wei
+            timestamp: Date.now() - 7200000, // 2 hours ago
+            type: "withdraw",
+            blockNumber: 12345677
+          },
+          {
+            hash: "0x3456789012345678901234567890123456789012345678901234567890123456",
+            from: "0x3456789012345678901234567890123456789012",
+            to: selectedVault.vaultAddress,
+            value: "2000000000000000000", // 2 tokens in wei
+            timestamp: Date.now() - 10800000, // 3 hours ago
+            type: "deposit",
+            blockNumber: 12345676
+          }
+        ];
+        
+        setTransactionHistory(mockTransactions);
+        console.log('✅ Fake vault transaction history loaded:', mockTransactions);
+        return;
+      }
+      
       const transactions = await vaultService.getTransactionHistory(selectedVault.vaultAddress);
       setTransactionHistory(transactions);
     } catch (error) {
@@ -356,11 +390,46 @@ export const useVault = () => {
     console.log('💰 Starting deposit process...', {
       vault: selectedVault.name,
       amount,
-      isRealVault: selectedVault.id === 4
+      isRealVault: selectedVault.isReal
     });
 
     setIsLoading(true);
     try {
+      // Handle fake vault deposits with mockup data
+      if (!selectedVault.isReal) {
+        console.log(`🎭 Fake vault ${selectedVault.name} - simulating deposit`);
+        
+        // Simulate deposit delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Update mockup data
+        const newShares = Math.floor(amount * (selectedVault.totalShares / selectedVault.totalDeposits));
+        const newTotalDeposited = userTotalDeposited + amount;
+        
+        setUserShares(prev => prev + newShares);
+        setUserTotalDeposited(prev => prev + amount);
+        
+        // Update vault mockup data
+        setVaults(prev => prev.map(v => 
+          v.id === selectedVault.id 
+            ? {
+                ...v,
+                totalDeposits: v.totalDeposits + amount,
+                totalShares: v.totalShares + newShares,
+                shareholderCount: v.shareholderCount + (userShares === 0 ? 1 : 0) // Add shareholder if first deposit
+              }
+            : v
+        ));
+        
+        toast({
+          title: "Success",
+          description: `Successfully deposited ${amount} ${selectedVault.token} to ${selectedVault.name}`,
+        });
+        
+        console.log('✅ Fake vault deposit completed:', { newShares, newTotalDeposited });
+        return;
+      }
+
       // Initialize contracts nếu là real vault (token1Address will be auto-detected)
       if (selectedVault.isReal) {
         console.log('🔧 Initializing contracts for real vault deposit...');
@@ -409,7 +478,7 @@ export const useVault = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedVault, user, userTokenBalance, approveToken, loadVaultData, loadUserData, loadTopTraders, loadTransactionHistory]);
+  }, [selectedVault, user, userTokenBalance, userShares, userTotalDeposited, loadVaultData, loadUserData, loadTopTraders, loadTransactionHistory]);
 
   // Withdraw từ vault
   const withdraw = useCallback(async (amount: number) => {
@@ -427,6 +496,42 @@ export const useVault = () => {
 
     setIsLoading(true);
     try {
+      // Handle fake vault withdrawals with mockup data
+      if (!selectedVault.isReal) {
+        console.log(`🎭 Fake vault ${selectedVault.name} - simulating withdrawal`);
+        
+        // Simulate withdrawal delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Update mockup data
+        const withdrawalAmount = amount * (selectedVault.totalDeposits / selectedVault.totalShares);
+        const newShares = userShares - amount;
+        const newTotalDeposited = userTotalDeposited - withdrawalAmount;
+        
+        setUserShares(newShares);
+        setUserTotalDeposited(newTotalDeposited);
+        
+        // Update vault mockup data
+        setVaults(prev => prev.map(v => 
+          v.id === selectedVault.id 
+            ? {
+                ...v,
+                totalDeposits: v.totalDeposits - withdrawalAmount,
+                totalShares: v.totalShares - amount,
+                shareholderCount: v.shareholderCount - (newShares === 0 ? 1 : 0) // Remove shareholder if no shares left
+              }
+            : v
+        ));
+        
+        toast({
+          title: "Success",
+          description: `Successfully withdrawn ${amount} shares from ${selectedVault.name}`,
+        });
+        
+        console.log('✅ Fake vault withdrawal completed:', { newShares, newTotalDeposited, withdrawalAmount });
+        return;
+      }
+
       // Withdraw từ vault
       toast({
         title: "Withdrawing",
@@ -455,13 +560,31 @@ export const useVault = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedVault, user, userShares, loadVaultData, loadUserData, loadTopTraders, loadTransactionHistory]);
+  }, [selectedVault, user, userShares, userTotalDeposited, loadVaultData, loadUserData, loadTopTraders, loadTransactionHistory]);
 
   // Kiểm tra trạng thái withdraw
   const checkWithdrawStatus = useCallback(async () => {
     if (!selectedVault) return;
 
     try {
+      // Handle fake vault withdraw status
+      if (!selectedVault.isReal) {
+        console.log(`🎭 Fake vault ${selectedVault.name} - using mockup withdraw status`);
+        
+        const mockStatus: WithdrawStatus = {
+          canWithdraw: selectedVault.withdrawalsEnabled,
+          isProcessing: false,
+          message: selectedVault.withdrawalsEnabled 
+            ? 'Withdrawals are enabled for this vault' 
+            : 'Withdrawals are not yet enabled for this vault',
+          timeRemaining: selectedVault.withdrawalsEnabled ? undefined : '2 days remaining'
+        };
+        
+        setWithdrawStatus(mockStatus);
+        console.log('✅ Fake vault withdraw status loaded:', mockStatus);
+        return;
+      }
+      
       const status = await vaultService.checkWithdrawStatus(selectedVault.vaultAddress);
       setWithdrawStatus(status);
     } catch (error) {
@@ -487,6 +610,30 @@ export const useVault = () => {
 
     setIsWithdrawing(true);
     try {
+      // Handle fake vault withdraw requests
+      if (!selectedVault.isReal) {
+        console.log(`🎭 Fake vault ${selectedVault.name} - simulating withdraw request`);
+        
+        // Simulate withdraw request delay
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        toast({
+          title: "Withdraw Request Sent",
+          description: "Your withdraw request is being processed...",
+        });
+        
+        // Simulate processing delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        toast({
+          title: "Withdraw Successful",
+          description: `Withdraw request processed for ${selectedVault.name}`,
+        });
+        
+        console.log('✅ Fake vault withdraw request completed');
+        return;
+      }
+      
       // Kiểm tra trạng thái withdraw trước
       const status = await vaultService.checkWithdrawStatus(selectedVault.vaultAddress);
       
@@ -628,30 +775,44 @@ export const useVault = () => {
     initializeVaults();
   }, []);
 
-  // Load data khi user thay đổi
+  // Load data khi user thay đổi (chỉ 1 lần)
   useEffect(() => {
     if (user && vaults.length > 0) {
+      console.log('🔄 Initial vault data load');
       loadVaultData();
     }
-  }, [user, vaults.length, loadVaultData]);
+  }, [user, vaults.length]); // Removed loadVaultData dependency
 
-  // Load user data, traders và transaction history khi chọn vault
+  // Load user data khi chọn vault (chỉ khi vault thay đổi)
   useEffect(() => {
     if (selectedVault && user) {
-      Promise.all([
-        loadUserData(),
-        loadTopTraders(),
-        loadTransactionHistory()
-      ]);
+      console.log('🔄 Loading user data for selected vault:', selectedVault.name);
+      loadUserData();
     }
-  }, [selectedVault, user, loadUserData, loadTopTraders, loadTransactionHistory]);
+  }, [selectedVault?.id, user]); // Only depend on selectedVault.id
 
   // Effect để kiểm tra withdraw status khi selected vault thay đổi
   useEffect(() => {
     if (selectedVault) {
       checkWithdrawStatus();
     }
-  }, [selectedVault, checkWithdrawStatus]);
+  }, [selectedVault?.id]);
+
+  // Add realtime interval for real vault updates
+  useEffect(() => {
+    if (!user || !vaults.some(v => v.isReal)) return;
+
+    console.log('🔄 Starting realtime updates for real vault');
+    
+    const interval = setInterval(() => {
+      loadVaultData();
+    }, 30000); // Update every 30 seconds
+
+    return () => {
+      console.log('🛑 Stopping realtime updates');
+      clearInterval(interval);
+    };
+  }, [user, vaults, loadVaultData]);
 
   return {
     vaults, selectedVault, setSelectedVault, userShares, userTotalDeposited, userTokenBalance,

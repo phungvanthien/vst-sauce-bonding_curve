@@ -24,7 +24,7 @@ export const HEDERA_CONFIG = {
     tokenDecimals: 6,
     apy: 15.0,
     riskLevel: "Medium",
-    maxShareholders: 50, // Updated from 100 to 50
+    maxShareholders: 50, 
   },
 
   // Development Settings
