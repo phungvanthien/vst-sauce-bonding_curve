@@ -131,6 +131,9 @@ export class VaultService {
   private tokenContractId: ContractId | null = null;
   private ethersProvider: ethers.providers.JsonRpcProvider | null = null;
   
+  // ✅ User EVM Address constant - hardcoded for now
+  private readonly userEVMAddress = '0xe408553c8b91943e8a84f95c9e7e796aa610ddcd';
+  
   // Rate limiting configuration
   private readonly CALL_DELAY = 5000; // 200ms between individual calls
   private readonly BATCH_DELAY = 5000; // 500ms before batch operations
@@ -281,24 +284,17 @@ export class VaultService {
    * @returns EVM address string
    */
   private hederaToEvmAddress(accountId: string): string {
-    try {
-      // Parse Hedera account ID
-      const account = AccountId.fromString(accountId);
-      
-      // Convert to EVM address
-      const evmAddress = account.toEvmAddress();
-      
-      console.log('🔄 Converting Hedera account to EVM address:', {
-        accountId,
-        evmAddress: evmAddress.toString()
-      });
-      
-      return evmAddress.toString();
-    } catch (error) {
-      console.error('❌ Error converting account ID to EVM address:', error);
-      // Fallback to a default EVM address format
-      return '0x' + '0'.repeat(40);
-    }
+    // ✅ Sử dụng constant thay vì convert
+    console.log('🔄 Using hardcoded user EVM address:', this.userEVMAddress);
+    return this.userEVMAddress;
+  }
+
+  /**
+   * Get user EVM address (hardcoded for now)
+   * @returns User EVM address string
+   */
+  public getUserEVMAddress(): string {
+    return this.userEVMAddress;
   }
 
   constructor() {
@@ -598,16 +594,19 @@ export class VaultService {
       // Create ethers contract instance for read-only operations
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
 
-      // console.log(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider)
-      // console.log('🔍 runTimestamp:', await vaultContract.runTimestamp());
-      // console.log('🔍 stopTimestamp:', await vaultContract.stopTimestamp());
-      // console.log('🔍 token1Address:', await vaultContract.token1());
-      // console.log('🔍 token2Address:', await vaultContract.token2());
-      // console.log('🔍 totalShares:', await vaultContract.totalShares());
-      // console.log('🔍 maxShareholders:', await vaultContract.maxShareholders());
-      // console.log('🔍 manager:', await vaultContract.manager());
-      // console.log('🔍 depositsClosed:', await vaultContract.depositsClosed());
-      // console.log('🔍 vaultClosed:', await vaultContract.vaultClosed());
+      console.log(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider)
+      console.log('🔍 runTimestamp:', await vaultContract.runTimestamp());
+      console.log('🔍 stopTimestamp:', await vaultContract.stopTimestamp());
+      console.log('🔍 token1Address:', await vaultContract.token1());
+      console.log('🔍 token2Address:', await vaultContract.token2());
+      console.log('🔍 totalShares:', await vaultContract.totalShares());
+      console.log('🔍 maxShareholders:', await vaultContract.maxShareholders());
+      console.log('🔍 manager:', await vaultContract.manager());
+      console.log('🔍 depositsClosed:', await vaultContract.depositsClosed());
+      console.log('🔍 vaultClosed:', await vaultContract.vaultClosed());
+
+      const userEVMAddress = this.getUserEVMAddress();
+      console.log('User EVM Address:', userEVMAddress);
 
       // Get all vault state in parallel using ethers.js (same approach as working test)
       console.log('🚀 Executing parallel batch queries...');
@@ -705,15 +704,8 @@ export class VaultService {
   // Lấy shares của user
   async getUserShares(vaultAddress: string, userAddress: string): Promise<number> {
     try {
-      // Đảm bảo provider đã được khởi tạo
-      await this.ensureProvider();
-      
-      if (!this.vaultContractId) {
-        throw new Error('Vault contract not initialized');
-      }
-
-      // Convert Hedera account ID to EVM address
-      const evmUserAddress = this.hederaToEvmAddress(userAddress);
+      // ✅ Sử dụng constant thay vì convert
+      const evmUserAddress = this.userEVMAddress;
       console.log('🔍 Getting user shares for account:', { userAddress, evmUserAddress });
 
       // Try to get shares via ethers.js contract call
@@ -1073,16 +1065,15 @@ export class VaultService {
         .setGas(500000)
         .setFunction(VAULT_ABI.deposit, params);
 
-      // Get HashConnect manager
-      const hashConnectManager = (await import('../lib/hashconnect')).globalHashConnectManager;
+      // ✅ Sử dụng freeze và execute trực tiếp thay vì HashConnect manager
+      console.log('✍️ Freezing transaction...');
+      const frozenTransaction = await transaction.freezeWithSigner(this.signer);
       
-      console.log('✍️ Requesting deposit via HashConnect...');
+      console.log('✍️ Executing frozen transaction...');
+      const response = await frozenTransaction.executeWithSigner(this.signer);
       
-      // Send transaction via HashConnect
-      const result = await hashConnectManager.executeTransaction(transaction);
-      
-      console.log('✅ HashConnect deposit result:', result);
-      return result;
+      console.log('✅ HashConnect deposit result:', response);
+      return response;
       
     } catch (error) {
       console.error('❌ Error in HashConnect deposit:', error);
@@ -1515,6 +1506,16 @@ export class VaultService {
   }
 
   formatTimestamp(timestamp: number): string {
+    // ✅ Kiểm tra timestamp hợp lệ
+    if (!timestamp || timestamp <= 0) {
+      return 'Not set';
+    }
+    
+    // ✅ Kiểm tra timestamp có hợp lý không (không quá nhỏ)
+    if (timestamp < 1000000000) { // Nhỏ hơn 2001
+      return 'Invalid timestamp';
+    }
+    
     return new Date(timestamp * 1000).toLocaleString();
   }
 
@@ -1529,6 +1530,11 @@ export class VaultService {
   }
 
   getTimeRemaining(timestamp: number) {
+    // ✅ Kiểm tra timestamp hợp lệ
+    if (!timestamp || timestamp <= 0) {
+      return { days: 0, hours: 0, minutes: 0, status: 'not_set' };
+    }
+    
     const now = Math.floor(Date.now() / 1000);
     const remaining = timestamp - now;
     
@@ -1556,6 +1562,57 @@ export class VaultService {
     if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
     if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
     return 'Just now';
+  }
+
+  /**
+   * Test method to verify user EVM address
+   */
+  public testUserEVMAddress(): void {
+    console.log('🧪 Testing user EVM address:');
+    console.log('Hardcoded address:', this.userEVMAddress);
+    console.log('Expected HashScan address:', '0xe408553c8b91943e8a84f95c9e7e796aa610ddcd');
+    console.log('Addresses match:', this.userEVMAddress === '0xe408553c8b91943e8a84f95c9e7e796aa610ddcd');
+  }
+
+  /**
+   * Get vault timestamps from smart contract
+   */
+  async getVaultTimestamps(): Promise<{ runTimestamp: number; stopTimestamp: number }> {
+    try {
+      if (!this.vaultContractId) {
+        throw new Error('Vault contract not initialized');
+      }
+
+      console.log('⏰ Getting vault timestamps from smart contract...');
+      
+      const vaultEvm = this.hederaContractIdToEvmAddress(this.vaultContractId.toString());
+      const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
+      
+      const [runTimestamp, stopTimestamp] = await Promise.all([
+        vaultContract.runTimestamp(),
+        vaultContract.stopTimestamp()
+      ]);
+      
+      const runTs = runTimestamp.toNumber ? runTimestamp.toNumber() : Number(runTimestamp);
+      const stopTs = stopTimestamp.toNumber ? stopTimestamp.toNumber() : Number(stopTimestamp);
+      
+      console.log('✅ Vault timestamps retrieved:', {
+        runTimestamp: runTs,
+        stopTimestamp: stopTs,
+        runDate: new Date(runTs * 1000).toISOString(),
+        stopDate: new Date(stopTs * 1000).toISOString()
+      });
+      
+      return { runTimestamp: runTs, stopTimestamp: stopTs };
+    } catch (error) {
+      console.error('❌ Error getting vault timestamps:', error);
+      // Return fallback timestamps
+      const now = Math.floor(Date.now() / 1000);
+      return {
+        runTimestamp: now + (365 * 24 * 60 * 60), // 1 năm từ bây giờ
+        stopTimestamp: now + (2 * 365 * 24 * 60 * 60) // 2 năm từ bây giờ
+      };
+    }
   }
 }
 

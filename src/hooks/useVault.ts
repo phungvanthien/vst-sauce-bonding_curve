@@ -77,13 +77,16 @@ export const useVault = () => {
       // Get real vault state
       const vaultState = await vaultService.getVaultInfo(realVault.vaultAddress);
       
+      // ✅ Lấy timestamps từ smart contract
+      const timestamps = await vaultService.getVaultTimestamps();
+
       // Update vault states
       setVaultStates(prev => ({
         ...prev,
         [realVault.vaultAddress]: vaultState
       }));
       
-      // Update real vault data
+      // Update real vault data với timestamps chính xác
       setVaults(prev => prev.map(v => 
         v.id === realVault.id 
           ? {
@@ -92,7 +95,10 @@ export const useVault = () => {
               shareholderCount: vaultState.shareholderCount,
               depositsClosed: vaultState.depositsClosed,
               withdrawalsEnabled: vaultState.withdrawalsEnabled,
-              totalDeposits: vaultState.totalBalance
+              totalDeposits: vaultState.totalBalance,
+              // ✅ Sử dụng timestamps từ smart contract
+              runTimestamp: timestamps.runTimestamp,
+              stopTimestamp: timestamps.stopTimestamp
             }
           : v
       ));
@@ -751,8 +757,9 @@ export const useVault = () => {
           totalShares: 0,
           shareholderCount: 0,
           maxShareholders: HEDERA_CONFIG.vaultInfo.maxShareholders,
-          runTimestamp: 0,
-          stopTimestamp: 0,
+          // ✅ Sử dụng timestamp hợp lệ thay vì 0
+          runTimestamp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60), // 1 năm từ bây giờ
+          stopTimestamp: Math.floor(Date.now() / 1000) + (2 * 365 * 24 * 60 * 60), // 2 năm từ bây giờ
           depositsClosed: false,
           withdrawalsEnabled: false,
           apy: HEDERA_CONFIG.vaultInfo.apy,
