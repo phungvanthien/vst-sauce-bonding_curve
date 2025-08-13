@@ -125,7 +125,9 @@ export interface TraderInfo {
  * This prevents rate limiting and ensures reliable contract interactions.
  */
 export class VaultService {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private client: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private signer: any = null;
   private vaultContractId: ContractId | null = null;
   private tokenContractId: ContractId | null = null;
@@ -170,6 +172,7 @@ export class VaultService {
   }
 
   // Chờ receipt cho một transaction response bằng signer hiện tại
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async waitForReceipt(response: TransactionResponse): Promise<any> {
     await this.ensureProvider();
     try {
@@ -184,6 +187,7 @@ export class VaultService {
       }
 
       // Fallback to Mirror Node polling
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const txIdRaw = (response as any)?.transactionId?.toString?.() || (response as any)?.transactionId;
       if (!txIdRaw) throw new Error('Missing transactionId on response');
       console.log('🔎 waitForReceipt txIdRaw:', txIdRaw);
@@ -931,6 +935,8 @@ export class VaultService {
       
       // console.log('✅ Deposit transaction sent via HashConnect:', depositResult);
       // return depositResult;
+
+      console.log('✅ Deposit transaction sent via HashConnect:', approveResult);
       
     } catch (error) {
       console.error('❌ Error in HashConnect deposit:', error);
@@ -1495,14 +1501,13 @@ export class VaultService {
 
   // Utility functions
   formatAmount(amount: number): string {
-    // Interpret amount in smallest units of USD token (assume 6 decimals by default)
-    const decimals = 6;
+    // Amount is already in units (not smallest units), so no need to divide
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount / Math.pow(10, decimals));
+    }).format(amount);
   }
 
   formatTimestamp(timestamp: number): string {

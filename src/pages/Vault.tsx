@@ -42,6 +42,7 @@ const Vault: React.FC = () => {
     userShares,
     userTotalDeposited,
     userTokenBalance,
+    userUSDCBalance,
     vaultStates,
     topTraders,
     transactionHistory,
@@ -57,6 +58,10 @@ const Vault: React.FC = () => {
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [showDepositForm, setShowDepositForm] = useState(false);
+  const [isWithdrawLoading, setIsWithdrawLoading] = useState(false);
+
+  // Debug: Log userUSDCBalance changes
+  console.log('🔍 Vault.tsx - userUSDCBalance:', userUSDCBalance);
 
   // Xử lý deposit - tự động approve token
   const handleDeposit = async () => {
@@ -94,8 +99,10 @@ const Vault: React.FC = () => {
     }
   };
 
-  // Xử lý withdraw
+  // Xử lý withdraw - chỉ hiển thị popup, không thực hiện transaction
   const handleWithdraw = async () => {
+    console.log('🔍 handleWithdraw called - starting local withdraw logic');
+    
     if (!withdrawAmount) {
       toast({
         title: "Error",
@@ -105,16 +112,24 @@ const Vault: React.FC = () => {
       return;
     }
 
-    try {
-      await withdraw(parseFloat(withdrawAmount));
-      setWithdrawAmount('');
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to withdraw",
-        variant: "destructive"
-      });
-    }
+    // Hiển thị popup "withdraw processing" ngay khi bấm
+    toast({
+      title: "Withdraw Processing",
+      description: "Please wait while we process your withdrawal request...",
+    });
+
+    // Bắt đầu loading state - button sẽ chuyển thành "Withdraw Processing"
+    console.log('🔍 Setting withdraw loading state to true');
+    setIsWithdrawLoading(true);
+
+    // Simulate processing delay
+    console.log('🔍 Starting 3 second delay simulation');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Reset form và loading state (không hiển thị thông báo thành công)
+    setWithdrawAmount('');
+    setIsWithdrawLoading(false);
+    console.log('🔍 handleWithdraw completed');
   };
 
   // Copy to clipboard
@@ -162,14 +177,20 @@ const Vault: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium">Your Token Balance</h3>
+                <h3 className="font-medium">Your USDC Balance</h3>
                 <p className="text-sm text-cyrus-textSecondary">
                   Available for vault deposits
                 </p>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold">{vaultService.formatAmount(userTokenBalance)}</div>
-                <div className="text-sm text-cyrus-textSecondary">USD</div>
+                <div className="text-2xl font-bold">
+                  {vaultService.formatAmount(userUSDCBalance)}
+                </div>
+                <div className="text-sm text-cyrus-textSecondary">USDC</div>
+                {/* Debug info */}
+                <div className="text-xs text-gray-500 mt-1">
+                  Raw: {userUSDCBalance} | Formatted: {vaultService.formatAmount(userUSDCBalance)}
+                </div>
               </div>
             </div>
           </CardContent>
@@ -374,23 +395,30 @@ const Vault: React.FC = () => {
                     {/* Withdraw Button */}
                     {selectedVault.withdrawalsEnabled && (
                       <div className="space-y-2">
-                        <Label htmlFor="withdraw-amount">Withdraw Shares</Label>
+                        <Label htmlFor="withdraw-amount">Withdraw (USDC)</Label>
                         <div className="flex gap-2">
                           <Input
                             id="withdraw-amount"
                             type="number"
-                            placeholder="Enter shares"
+                            placeholder="Enter USDC amount"
                             value={withdrawAmount}
                             onChange={(e) => setWithdrawAmount(e.target.value)}
-                                  disabled={isLoading}
+                                  disabled={isWithdrawLoading}
                           />
                                 <Button
                             onClick={handleWithdraw}
-                            disabled={isLoading || !withdrawAmount}
+                            disabled={isWithdrawLoading || !withdrawAmount}
                                   variant="outline"
                             className="border-red-500 text-red-500 hover:bg-red-50"
                                 >
-                            {isLoading ? 'Processing...' : 'Withdraw'}
+                            {isWithdrawLoading ? (
+                              <div className="flex items-center gap-2">
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
+                                Processing...
+                              </div>
+                            ) : (
+                              'Withdraw'
+                            )}
                                 </Button>
                         </div>
                       </div>

@@ -11,9 +11,9 @@ export const HEDERA_CONFIG = {
 
   // Smart Contract Addresses (Hedera Contract IDs)
   contracts: {
-    // Đọc từ .env file - hỗ trợ cả 2 format
-    vaultContractId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_VAULT_ADDRESS) || (typeof import.meta !== 'undefined' && import.meta.env?.VAULT_ADDRESS) || '0.0.9589598', // Vault contract ID
-    tokenContractId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TOKEN_ADDRESS) || (typeof import.meta !== 'undefined' && import.meta.env?.TOKEN_ADDRESS) || '0.0.456858', // Real USDC token on Hedera Mainnet
+    // Read from .env file - support both formats
+    vaultContractId: (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.VITE_VAULT_ADDRESS || (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.VAULT_ADDRESS || '0.0.9589598', // Vault contract ID
+    tokenContractId: (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.VITE_TOKEN_ADDRESS || (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.TOKEN_ADDRESS || '0.0.456858', // Real USDC token on Hedera Mainnet
   },
 
   // Vault Information

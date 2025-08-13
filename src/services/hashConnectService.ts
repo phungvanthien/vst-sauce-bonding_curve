@@ -22,7 +22,7 @@ class HashConnectService {
     return this.manager;
   }
 
-  async getClient(): Promise<any> {
+  async getClient(): Promise<unknown> {
     const manager = await this.getManager();
     if (!manager.isConnected()) {
       throw new Error('HashConnect not connected. Please connect your wallet first.');
@@ -30,7 +30,7 @@ class HashConnectService {
     return await manager.getClient();
   }
 
-  async getSigner(): Promise<any> {
+  async getSigner(): Promise<unknown> {
     const manager = await this.getManager();
     if (!manager.isConnected()) {
       throw new Error('HashConnect not connected. Please connect your wallet first.');
@@ -38,11 +38,15 @@ class HashConnectService {
     // Use default paired account if none is specified
     try {
       return await manager.getSigner();
-    } catch (error: any) {
+    } catch (error: unknown) {
       const message = String(error?.message || error);
       if (message.includes('Signer could not find session')) {
         // Prompt user to pair again
-        try { await manager.initHashConnect(); } catch {}
+        try { 
+          await manager.initHashConnect(); 
+        } catch (error) {
+          console.log('HashConnect init error:', error);
+        }
         throw new Error('HashConnect not connected. Please connect your wallet first and try again.');
       }
       throw error;

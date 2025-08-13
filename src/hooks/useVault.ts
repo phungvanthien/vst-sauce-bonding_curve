@@ -42,6 +42,7 @@ export const useVault = () => {
   const [userShares, setUserShares] = useState(0);
   const [userTotalDeposited, setUserTotalDeposited] = useState(0);
   const [userTokenBalance, setUserTokenBalance] = useState(0);
+  const [userUSDCBalance, setUserUSDCBalance] = useState(0);
   const [vaultStates, setVaultStates] = useState<Record<string, VaultState>>({});
   const [topTraders, setTopTraders] = useState<TraderInfo[]>([]);
   const [transactionHistory, setTransactionHistory] = useState<Transaction[]>([]);
@@ -69,14 +70,14 @@ export const useVault = () => {
         return;
       }
 
-      console.log('�� Loading real vault data:', realVault.name);
+      console.log('🔄 Loading real vault data:', realVault.name);
       
       // Initialize contracts for real vault
       await vaultService.initializeContracts(realVault.vaultAddress);
       
       // Get real vault state
       const vaultState = await vaultService.getVaultInfo(realVault.vaultAddress);
-      
+
       // Update vault states
       setVaultStates(prev => ({
         ...prev,
@@ -84,6 +85,7 @@ export const useVault = () => {
       }));
       
       // Update real vault data
+      console.log('🔍 Vault state:', vaultState);
       setVaults(prev => prev.map(v => 
         v.id === realVault.id 
           ? {
@@ -116,6 +118,45 @@ export const useVault = () => {
       setIsLoadingVaultData(false);
     }
   }, [user, vaults, isLoadingVaultData]);
+
+  // Load USDC balance khi user thay đổi
+  const loadUserUSDCBalance = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      console.log('💰 Loading USDC balance for user');
+      
+      // Lấy real vault để lấy token address (USDC)
+      const realVault = vaults.find(v => v.isReal);
+      if (!realVault) {
+        console.log('ℹ️ No real vault found, skipping USDC balance load');
+        return;
+      }
+
+      // Initialize contracts for real vault
+      await vaultService.initializeContracts(realVault.vaultAddress);
+      
+      // Lấy state để có token1Address
+      const vaultState = await vaultService.getVaultInfo(realVault.vaultAddress);
+      
+      if (vaultState.token1Address) {
+        const userAddress = user.walletType === 'hashpack' ? user.accountId : user.walletAddress;
+        const balanceSmallest = await vaultService.getTokenBalanceContract(
+          vaultState.token1Address,
+          userAddress
+        );
+        
+        // USDC 6 decimals
+        const balanceInUnits = balanceSmallest / Math.pow(10, 6);
+        setUserUSDCBalance(balanceInUnits);
+        
+        console.log('💰 USDC balance loaded:', balanceInUnits);
+      }
+    } catch (error) {
+      console.error('❌ Error loading USDC balance:', error);
+      setUserUSDCBalance(0);
+    }
+  }, [user, vaults]);
 
   // Load user shares và total deposited cho vault được chọn
   const loadUserData = useCallback(async () => {
@@ -317,7 +358,9 @@ export const useVault = () => {
       console.log('✅ Approve transaction sent:', approveTx.transactionId);
       try {
         console.log('🔎 Approve txId string:', approveTx.transactionId.toString());
-      } catch {}
+      } catch (error) {
+        console.log('🔎 Approve txId string error:', error);
+      }
       
       // Đợi approve transaction hoàn thành
       toast({
@@ -599,6 +642,8 @@ export const useVault = () => {
 
   // Gửi withdraw request
   const requestWithdraw = useCallback(async () => {
+    console.log('🔍 requestWithdraw called from useVault hook');
+    
     if (!selectedVault || !user) {
       toast({
         title: "Error",
@@ -617,18 +662,18 @@ export const useVault = () => {
         // Simulate withdraw request delay
         await new Promise(resolve => setTimeout(resolve, 3000));
         
-        toast({
-          title: "Withdraw Request Sent",
-          description: "Your withdraw request is being processed...",
-        });
+        // toast({
+        //   title: "Withdraw Request Sent",
+        //   description: "Your withdraw request is being processed...",
+        // });
         
         // Simulate processing delay
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        toast({
-          title: "Withdraw Successful",
-          description: `Withdraw request processed for ${selectedVault.name}`,
-        });
+        // toast({
+        //   title: "Withdraw Successful",
+        //   description: `Withdraw request processed for ${selectedVault.name}`,
+        // });
         
         console.log('✅ Fake vault withdraw request completed');
         return;
@@ -649,10 +694,10 @@ export const useVault = () => {
       // Thực hiện withdraw request
       const tx = await vaultService.requestWithdraw(selectedVault.vaultAddress);
       
-      toast({
-        title: "Withdraw Request Sent",
-        description: "Your withdraw request is being processed...",
-      });
+      // toast({
+      //   title: "Withdraw Request Sent",
+      //   description: "Your withdraw request is being processed...",
+      // });
 
       // Chờ transaction được confirm
       const receipt = await vaultService.waitForReceipt(tx);
@@ -789,14 +834,14 @@ export const useVault = () => {
       console.log('🔄 Loading user data for selected vault:', selectedVault.name);
       loadUserData();
     }
-  }, [selectedVault?.id, user]); // Only depend on selectedVault.id
+  }, [selectedVault?.id, user, loadUserData]); // Added loadUserData dependency
 
   // Effect để kiểm tra withdraw status khi selected vault thay đổi
   useEffect(() => {
     if (selectedVault) {
       checkWithdrawStatus();
     }
-  }, [selectedVault?.id]);
+  }, [selectedVault?.id, checkWithdrawStatus]); // Added checkWithdrawStatus dependency
 
   // Add realtime interval for real vault updates
   useEffect(() => {
@@ -814,8 +859,15 @@ export const useVault = () => {
     };
   }, [user, vaults, loadVaultData]);
 
+  // Load USDC balance khi user thay đổi
+  useEffect(() => {
+    if (user) {
+      loadUserUSDCBalance();
+    }
+  }, [user, loadUserUSDCBalance]);
+
   return {
-    vaults, selectedVault, setSelectedVault, userShares, userTotalDeposited, userTokenBalance,
+    vaults, selectedVault, setSelectedVault, userShares, userTotalDeposited, userTokenBalance, userUSDCBalance,
     vaultStates, topTraders, transactionHistory, isLoading, isRefreshing, withdrawStatus, isWithdrawing,
     loadVaultData, loadUserData, loadTopTraders, loadTransactionHistory, deposit, approveToken, withdraw, requestWithdraw, checkWithdrawStatus
   };
