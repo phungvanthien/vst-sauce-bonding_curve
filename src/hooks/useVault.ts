@@ -95,9 +95,8 @@ export const useVault = () => {
               depositsClosed: vaultState.depositsClosed,
               withdrawalsEnabled: vaultState.withdrawalsEnabled,
               totalDeposits: vaultState.totalBalance,
-              // ✅ Sử dụng timestamps từ smart contract
-              runTimestamp: timestamps.runTimestamp,
-              stopTimestamp: timestamps.stopTimestamp,
+              runTimestamp: vaultState.runTimestamp,
+              stopTimestamp: vaultState.stopTimestamp,
               // ✅ APY được lấy từ getVaultInfo()
               apy: (vaultState as any).apy ?? v.apy
             }
