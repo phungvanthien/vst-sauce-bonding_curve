@@ -64,7 +64,7 @@ export function HashConnectProvider({ children }: HashConnectProviderProps) {
    */
   useEffect(() => {
     // Handle successful pairing with wallet
-    const handlePairing = (newPairing: any) => {
+    const handlePairing = (newPairing: unknown) => {
       setPairingData(newPairing);
       setConnectionState(HashConnectConnectionState.Paired);
     };

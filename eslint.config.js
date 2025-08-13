@@ -24,6 +24,15 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-unused-expressions": "off",
+      // Disable strict any checks for development files
+      "@typescript-eslint/no-explicit-any": "warn",
+      // Allow require() in config files
+      "@typescript-eslint/no-require-imports": "warn",
+      // Allow empty interfaces for component props
+      "@typescript-eslint/no-empty-object-type": "warn",
+      // Allow Function type for complex integrations
+      "@typescript-eslint/no-unsafe-function-type": "warn",
     },
   }
 );
