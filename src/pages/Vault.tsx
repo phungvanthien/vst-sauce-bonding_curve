@@ -149,7 +149,7 @@ const Vault: React.FC = () => {
             onClick={loadVaultData}
             disabled={isRefreshing}
             className="flex items-center gap-2"
-          >
+         >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>

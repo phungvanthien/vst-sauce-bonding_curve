@@ -69,7 +69,7 @@ export const useVault = () => {
         return;
       }
 
-      console.log('�� Loading real vault data:', realVault.name);
+      console.log(' Loading real vault data:', realVault.name);
       
       // Initialize contracts for real vault
       await vaultService.initializeContracts(realVault.vaultAddress);
@@ -86,7 +86,8 @@ export const useVault = () => {
         [realVault.vaultAddress]: vaultState
       }));
       
-      // Update real vault data với timestamps chính xác
+      // Update real vault data với timestamps chính xác và APY từ getVaultInfo
+      console.log('🔍 Vault state:', vaultState.apy);
       setVaults(prev => prev.map(v => 
         v.id === realVault.id 
           ? {
@@ -98,7 +99,9 @@ export const useVault = () => {
               totalDeposits: vaultState.totalBalance,
               // ✅ Sử dụng timestamps từ smart contract
               runTimestamp: timestamps.runTimestamp,
-              stopTimestamp: timestamps.stopTimestamp
+              stopTimestamp: timestamps.stopTimestamp,
+              // ✅ APY được lấy từ getVaultInfo()
+              apy: (vaultState as any).apy ?? v.apy
             }
           : v
       ));
@@ -344,7 +347,7 @@ export const useVault = () => {
       console.error('❌ Approval error:', error);
       
       // If it's a connection error, try to force reconnect
-      if (error.message.includes('HashConnect not connected')) {
+      if ((error as any).message?.includes('HashConnect not connected')) {
         console.log('🔄 Attempting force reconnect...');
         try {
           await vaultService.forceReconnect();
@@ -415,7 +418,7 @@ export const useVault = () => {
         setUserShares(prev => prev + newShares);
         setUserTotalDeposited(prev => prev + amount);
         
-        // Update vault mockup data
+        // Update vault mockup data (APY will not be recalculated for mock vaults)
         setVaults(prev => prev.map(v => 
           v.id === selectedVault.id 
             ? {
@@ -457,7 +460,7 @@ export const useVault = () => {
         console.log('✅ HashConnect deposit completed successfully');
         
         // Extract transaction ID if available for logging
-        const transactionId = depositResult?.transactionId || depositResult?.transaction_id;
+        const transactionId = (depositResult as any)?.transactionId || (depositResult as any)?.transaction_id;
         if (transactionId) {
           console.log('🔎 Deposit transaction ID:', transactionId);
         }
@@ -680,7 +683,7 @@ export const useVault = () => {
       console.error('Error requesting withdraw:', error);
       toast({
         title: "Withdraw Failed",
-        description: error instanceof Error ? error.message : "Failed to process withdraw request",
+        description: (error as any) instanceof Error ? (error as any).message : "Failed to process withdraw request",
         variant: "destructive"
       });
     } finally {
@@ -709,8 +712,8 @@ export const useVault = () => {
           token: "HBAR",
           tokenAddress: "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
           vaultAddress: "0x2fA02b2d6A771842690194Cf62D91bdd92BfE28e",
-          totalDeposits: 1800000,
-          totalShares: 1800000,
+          totalDeposits: 180,
+          totalShares: 180,
           shareholderCount: 32,
           maxShareholders: 50,
           runTimestamp: 1754568292,
@@ -729,12 +732,12 @@ export const useVault = () => {
           token: "HBAR",
           tokenAddress: "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
           vaultAddress: "0x3fA02b2d6A771842690194Cf62D91bdd92BfE28f",
-          totalDeposits: 3200000,
-          totalShares: 3200000,
+          totalDeposits: 320,
+          totalShares: 320,
           shareholderCount: 48,
           maxShareholders: 50, // Updated from 100 to 50
-          runTimestamp: 1754368292,
-          stopTimestamp: 1754368592,
+          runTimestamp: 1754368292-3600*30,
+          stopTimestamp: 1754368592-3600*360,
           depositsClosed: true,
           withdrawalsEnabled: false,
           apy: 18.7,
@@ -758,8 +761,8 @@ export const useVault = () => {
           shareholderCount: 0,
           maxShareholders: HEDERA_CONFIG.vaultInfo.maxShareholders,
           // ✅ Sử dụng timestamp hợp lệ thay vì 0
-          runTimestamp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60), // 1 năm từ bây giờ
-          stopTimestamp: Math.floor(Date.now() / 1000) + (2 * 365 * 24 * 60 * 60), // 2 năm từ bây giờ
+          runTimestamp: 1754368292-3600*90, // 1 năm từ bây giờ
+          stopTimestamp: 1754368292-3600*30, // 2 năm từ bây giờ
           depositsClosed: false,
           withdrawalsEnabled: false,
           apy: HEDERA_CONFIG.vaultInfo.apy,

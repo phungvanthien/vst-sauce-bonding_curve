@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { HEDERA_CONFIG } from '@/config/hederaConfig';
-import vaultABI from '../../../Vault.json';
+import vaultABI from '../../Vault.json';
 
 // Test configuration
 const TEST_CONFIG = {
@@ -192,9 +192,13 @@ export class VaultStateTest {
       
       const vaultState = await this.vaultContract.getVaultState();
       
+      // Convert totalBalance from microUSDC (6 decimals) to USDC
+      const totalBalanceRaw = vaultState[1].toNumber ? vaultState[1].toNumber() : Number(vaultState[1]);
+      const totalBalanceConverted = totalBalanceRaw / Math.pow(10, 6); // Convert from microUSDC to USDC
+      
       const data = {
         totalShares: vaultState[0].toNumber ? vaultState[0].toNumber() : Number(vaultState[0]),
-        totalBalance: vaultState[1].toNumber ? vaultState[1].toNumber() : Number(vaultState[1]),
+        totalBalance: totalBalanceConverted, // Use converted USDC value
         shareholderCount: vaultState[2].toNumber ? vaultState[2].toNumber() : Number(vaultState[2]),
         depositsClosed: Boolean(vaultState[3]),
         vaultClosed: Boolean(vaultState[4])

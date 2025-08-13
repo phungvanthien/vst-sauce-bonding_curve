@@ -15,7 +15,7 @@ import { hashConnectService } from './hashConnectService';
 import { ethers } from 'ethers';
 
 // Import the real Vault ABI that works in tests
-import vaultABI from '../../../Vault.json';
+import vaultABI from '../../Vault.json';
 
 // Use the real ABI for ethers.js operations
 const VAULT_ABI_ETHERS = vaultABI.abi;
@@ -67,6 +67,7 @@ export interface VaultState {
   stopTimestamp: number;   // Timestamp when withdrawals open
   token1Address: string;   // EVM address of token1 from vault contract
   token2Address: string;   // EVM address of token2 from vault contract
+  apy: number;             // Calculated APY returned by getVaultInfo
 }
 
 export interface VaultInfo {
@@ -338,7 +339,7 @@ export class VaultService {
         } catch (_e) {
           // ignore
         }
-        // Final check
+        // Final check:
         if (!(await hashConnectService.isConnected())) {
           throw new Error(`HashConnect not paired. Current state: ${connectionState}`);
         }
@@ -594,76 +595,80 @@ export class VaultService {
       // Create ethers contract instance for read-only operations
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
 
-      console.log(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider)
-      console.log('🔍 runTimestamp:', await vaultContract.runTimestamp());
-      console.log('🔍 stopTimestamp:', await vaultContract.stopTimestamp());
-      console.log('🔍 token1Address:', await vaultContract.token1());
-      console.log('🔍 token2Address:', await vaultContract.token2());
-      console.log('🔍 totalShares:', await vaultContract.totalShares());
-      console.log('🔍 maxShareholders:', await vaultContract.maxShareholders());
-      console.log('🔍 manager:', await vaultContract.manager());
-      console.log('🔍 depositsClosed:', await vaultContract.depositsClosed());
-      console.log('🔍 vaultClosed:', await vaultContract.vaultClosed());
+      // console.log(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider)
+      // console.log('🔍 runTimestamp:', await vaultContract.runTimestamp());
+      // console.log('🔍 stopTimestamp:', await vaultContract.stopTimestamp());
+      // console.log('🔍 token1Address:', await vaultContract.token1());
+      // console.log('🔍 token2Address:', await vaultContract.token2());
+      // console.log('🔍 totalShares:', await vaultContract.totalShares());
+      // console.log('🔍 maxShareholders:', await vaultContract.maxShareholders());
+      // console.log('🔍 manager:', await vaultContract.manager());
+      // console.log('🔍 depositsClosed:', await vaultContract.depositsClosed());
+      // console.log('🔍 vaultClosed:', await vaultContract.vaultClosed());
 
       const userEVMAddress = this.getUserEVMAddress();
       console.log('User EVM Address:', userEVMAddress);
 
       // Get all vault state in parallel using ethers.js (same approach as working test)
       console.log('🚀 Executing parallel batch queries...');
-      const [runTimestamp, stopTimestamp, token1Address, token2Address, totalShares, maxShareholders, manager, depositsClosed, vaultClosed] = await Promise.all([
+      const [runTimestamp, stopTimestamp, token1Address, token2Address, maxShareholders, manager, vaultState] = await Promise.all([
         vaultContract.runTimestamp(),
         vaultContract.stopTimestamp(),
         vaultContract.token1(),
         vaultContract.token2(),
-        vaultContract.totalShares(),
         vaultContract.maxShareholders(),
         vaultContract.manager(),
-        vaultContract.depositsClosed(),
-        vaultContract.vaultClosed()
+        vaultContract.getVaultState()
       ]);
       
       console.log('✅ Parallel batch queries completed');
 
-      // Get additional state with delays
-      console.log('⏳ Getting additional state with delays...');
-      await this.delay(this.ADDITIONAL_DELAY);
-      
-      const totalBalance = await vaultContract.totalBalance ? await vaultContract.totalBalance() : totalShares;
-      await this.delay(this.CALL_DELAY);
-      
-      const shareholderCount = await vaultContract.getShareholderCount ? await vaultContract.getShareholderCount() : 1;
-      await this.delay(this.BATCH_DELAY);
-      
+      const { _totalShares, _totalBalance, _shareholderCount, _depositsClosed, _vaultClosed } = vaultState;
+
+      console.log('🔍 totalBalance (raw from contract):', _totalBalance);
+            
       // Calculate current time-based states
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const depositsClosedByTime = currentTimestamp >= runTimestamp.toNumber();
       const withdrawalsEnabledByTime = currentTimestamp >= stopTimestamp.toNumber();
       
-      const vaultState = {
-        totalShares: totalShares.toNumber(),
-        totalBalance: totalBalance.toNumber ? totalBalance.toNumber() : Number(totalBalance),
-        shareholderCount: shareholderCount.toNumber ? shareholderCount.toNumber() : Number(shareholderCount),
-        depositsClosed: depositsClosed || depositsClosedByTime,  // Closed by contract OR by time
+      // Convert totalBalance from microUSDC (6 decimals) to USDC
+      const totalSharesNum = _totalShares.toNumber();
+      const totalBalanceRaw = _totalBalance.toNumber ? _totalBalance.toNumber() : Number(_totalBalance);
+      const totalBalanceNum = totalBalanceRaw / Math.pow(10, 6); // Convert from microUSDC to USDC
+      const baseApy = HEDERA_CONFIG.vaultInfo.apy || 0;
+
+      console.log('🔍 totalSharesNum:', totalSharesNum, 'totalBalanceRaw (microUSDC):', totalBalanceRaw, 'totalBalanceNum (USDC):', totalBalanceNum);
+      const computedApy = Math.max(((totalBalanceRaw - totalSharesNum) / totalSharesNum) * 100, 0);
+
+        console.log('🔍 computedApy:', computedApy);
+      const vaultStateData = {
+        totalShares: totalSharesNum,
+        totalBalance: totalBalanceNum, // Use converted USDC value instead of raw microUSDC
+        shareholderCount: _shareholderCount.toNumber(),
+        depositsClosed: _depositsClosed || depositsClosedByTime,  // Closed by contract OR by time
         withdrawalsEnabled: withdrawalsEnabledByTime,  // Enabled by time
-        vaultClosed,
+        vaultClosed: _vaultClosed,
         runTimestamp: runTimestamp.toNumber(),
         stopTimestamp: stopTimestamp.toNumber(),
         token1Address: typeof token1Address === 'string' ? token1Address : token1Address.toString(),
-        token2Address: typeof token2Address === 'string' ? token2Address : token2Address.toString()
+        token2Address: typeof token2Address === 'string' ? token2Address : token2Address.toString(),
+        apy: Number.isFinite(computedApy) ? Number(computedApy.toFixed(2)) : baseApy
       };
       
       console.log('📊 Parsed vault state via ethers.js:', {
-        ...vaultState,
+        vaultStateData,
         currentTimestamp,
         depositsClosedByTime,
         withdrawalsEnabledByTime,
-        runTimestampDate: new Date(vaultState.runTimestamp * 1000).toISOString(),
-        stopTimestampDate: new Date(vaultState.stopTimestamp * 1000).toISOString(),
+
+        // runTimestampDate: new Date(vaultState.runTimestamp * 1000).toISOString(),
+        // stopTimestampDate: new Date(vaultState.stopTimestamp * 1000).toISOString(),
         maxShareholders: maxShareholders.toNumber(),
         manager: typeof manager === 'string' ? manager : manager.toString()
       });
       
-      return vaultState;
+      return vaultStateData;
     } catch (error) {
       console.error('❌ Error getting vault info via ethers.js:', error);
       throw error;
@@ -683,9 +688,13 @@ export class VaultService {
       
       const vaultState = await vaultContract.getVaultState();
       
+      // Convert totalBalance from microUSDC (6 decimals) to USDC
+      const totalBalanceRaw = vaultState[1].toNumber ? vaultState[1].toNumber() : Number(vaultState[1]);
+      const totalBalanceConverted = totalBalanceRaw / Math.pow(10, 6); // Convert from microUSDC to USDC
+      
       const data = {
         totalShares: vaultState[0].toNumber ? vaultState[0].toNumber() : Number(vaultState[0]),
-        totalBalance: vaultState[1].toNumber ? vaultState[1].toNumber() : Number(vaultState[1]),
+        totalBalance: totalBalanceConverted, // Use converted USDC value
         shareholderCount: vaultState[2].toNumber ? vaultState[2].toNumber() : Number(vaultState[2]),
         depositsClosed: Boolean(vaultState[3]),
         vaultClosed: Boolean(vaultState[4])
@@ -716,9 +725,10 @@ export class VaultService {
         console.log('📖 Reading user shares via Ethers.js contract call...');
         const shares = await vaultContract.shares(evmUserAddress);
         const value = shares?.toNumber ? shares.toNumber() : Number(shares);
+        const valueConverted = value / Math.pow(10, 6);
         
-        console.log('✅ User shares retrieved:', { userAddress, evmUserAddress, shares: value });
-        return value;
+        console.log('✅ User shares retrieved:', { userAddress, evmUserAddress, shares: value, sharesConverted: valueConverted });
+        return valueConverted;
       } catch (contractError) {
         console.warn('⚠️ Contract query failed, falling back to 0:', contractError);
         return 0;
@@ -1495,14 +1505,13 @@ export class VaultService {
 
   // Utility functions
   formatAmount(amount: number): string {
-    // Interpret amount in smallest units of USD token (assume 6 decimals by default)
-    const decimals = 6;
+    // Amount is now in USDC units (not microUSDC), so no need to divide by 10^6
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount / Math.pow(10, decimals));
+    }).format(amount);
   }
 
   formatTimestamp(timestamp: number): string {
