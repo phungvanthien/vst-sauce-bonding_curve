@@ -249,25 +249,15 @@ const Vault: React.FC = () => {
                       className="h-2"
                     />
 
-                    {/* Timestamps - Updated with better formatting */}
+                    {/* Timestamps */}
                     <div className="space-y-2 text-xs text-cyrus-textSecondary">
                       <div className="flex items-center justify-between">
                         <span>Deposits Close:</span>
-                        <span className={vault.runTimestamp > 0 ? 'text-green-600' : 'text-red-500'}>
-                          {vault.runTimestamp > 0 
-                            ? vaultService.formatTimestamp(vault.runTimestamp)
-                            : 'Not set'
-                          }
-                        </span>
+                        <span>{vaultService.formatTimestamp(vault.runTimestamp)}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Withdrawals Open:</span>
-                        <span className={vault.stopTimestamp > 0 ? 'text-blue-600' : 'text-red-500'}>
-                          {vault.stopTimestamp > 0 
-                            ? vaultService.formatTimestamp(vault.stopTimestamp)
-                            : 'Not set'
-                          }
-                        </span>
+                        <span>{vaultService.formatTimestamp(vault.stopTimestamp)}</span>
                       </div>
                     </div>
                   </CardContent>

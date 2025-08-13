@@ -925,12 +925,12 @@ export class VaultService {
       
       console.log('✅ Approve completed:', approveResult);
 
-      // Step 2: Execute deposit via HashConnect
-      console.log('💸 Step 2: Executing deposit via HashConnect...');
-      const depositResult = await this.depositHashConnect(amount);
+      // // Step 2: Execute deposit via HashConnect
+      // console.log('💸 Step 2: Executing deposit via HashConnect...');
+      // const depositResult = await this.depositHashConnect(amount);
       
-      console.log('✅ Deposit transaction sent via HashConnect:', depositResult);
-      return depositResult;
+      // console.log('✅ Deposit transaction sent via HashConnect:', depositResult);
+      // return depositResult;
       
     } catch (error) {
       console.error('❌ Error in HashConnect deposit:', error);
@@ -1506,16 +1506,6 @@ export class VaultService {
   }
 
   formatTimestamp(timestamp: number): string {
-    // ✅ Kiểm tra timestamp hợp lệ
-    if (!timestamp || timestamp <= 0) {
-      return 'Not set';
-    }
-    
-    // ✅ Kiểm tra timestamp có hợp lý không (không quá nhỏ)
-    if (timestamp < 1000000000) { // Nhỏ hơn 2001
-      return 'Invalid timestamp';
-    }
-    
     return new Date(timestamp * 1000).toLocaleString();
   }
 
@@ -1530,11 +1520,6 @@ export class VaultService {
   }
 
   getTimeRemaining(timestamp: number) {
-    // ✅ Kiểm tra timestamp hợp lệ
-    if (!timestamp || timestamp <= 0) {
-      return { days: 0, hours: 0, minutes: 0, status: 'not_set' };
-    }
-    
     const now = Math.floor(Date.now() / 1000);
     const remaining = timestamp - now;
     
@@ -1572,47 +1557,6 @@ export class VaultService {
     console.log('Hardcoded address:', this.userEVMAddress);
     console.log('Expected HashScan address:', '0xe408553c8b91943e8a84f95c9e7e796aa610ddcd');
     console.log('Addresses match:', this.userEVMAddress === '0xe408553c8b91943e8a84f95c9e7e796aa610ddcd');
-  }
-
-  /**
-   * Get vault timestamps from smart contract
-   */
-  async getVaultTimestamps(): Promise<{ runTimestamp: number; stopTimestamp: number }> {
-    try {
-      if (!this.vaultContractId) {
-        throw new Error('Vault contract not initialized');
-      }
-
-      console.log('⏰ Getting vault timestamps from smart contract...');
-      
-      const vaultEvm = this.hederaContractIdToEvmAddress(this.vaultContractId.toString());
-      const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
-      
-      const [runTimestamp, stopTimestamp] = await Promise.all([
-        vaultContract.runTimestamp(),
-        vaultContract.stopTimestamp()
-      ]);
-      
-      const runTs = runTimestamp.toNumber ? runTimestamp.toNumber() : Number(runTimestamp);
-      const stopTs = stopTimestamp.toNumber ? stopTimestamp.toNumber() : Number(stopTimestamp);
-      
-      console.log('✅ Vault timestamps retrieved:', {
-        runTimestamp: runTs,
-        stopTimestamp: stopTs,
-        runDate: new Date(runTs * 1000).toISOString(),
-        stopDate: new Date(stopTs * 1000).toISOString()
-      });
-      
-      return { runTimestamp: runTs, stopTimestamp: stopTs };
-    } catch (error) {
-      console.error('❌ Error getting vault timestamps:', error);
-      // Return fallback timestamps
-      const now = Math.floor(Date.now() / 1000);
-      return {
-        runTimestamp: now + (365 * 24 * 60 * 60), // 1 năm từ bây giờ
-        stopTimestamp: now + (2 * 365 * 24 * 60 * 60) // 2 năm từ bây giờ
-      };
-    }
   }
 }
 
