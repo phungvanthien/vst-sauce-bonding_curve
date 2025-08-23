@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useContext,
   useEffect,
@@ -64,7 +64,7 @@ export function HashConnectProvider({ children }: HashConnectProviderProps) {
    */
   useEffect(() => {
     // Handle successful pairing with wallet
-    const handlePairing = (newPairing: unknown) => {
+    const handlePairing = (newPairing: SessionData) => {
       setPairingData(newPairing);
       setConnectionState(HashConnectConnectionState.Paired);
     };
@@ -213,4 +213,4 @@ export function useHashConnect() {
     throw new Error("useHashConnect must be used within a HashConnectProvider");
   }
   return context;
-} 
+}

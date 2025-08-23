@@ -26,7 +26,7 @@ export const VAULT_CONFIG = {
 
   // Development Settings
   development: {
-    useMockData: true, // Set to false để thêm smart contract thực vào danh sách
+    useMockData: false, // Set to false to use only real smart contracts
     enableLogging: true,
     autoRefreshInterval: 30000, // 30 seconds
   }

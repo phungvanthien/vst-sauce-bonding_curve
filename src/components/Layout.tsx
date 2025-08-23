@@ -204,7 +204,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </div>
               <div className="mt-1 truncate text-sm font-mono">
                 {user?.walletType === 'hashpack' 
-                  ? `${user?.accountId?.substring(0, 8)}...${user?.accountId?.substring(user.accountId.length - 8)}`
+                  ? `${user?.accountId}`
                   : `${user?.walletAddress?.substring(0, 8)}...${user?.walletAddress?.substring(user.walletAddress.length - 8)}`
                 }
               </div>

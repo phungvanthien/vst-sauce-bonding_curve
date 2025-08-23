@@ -7,7 +7,7 @@ import { HEDERA_CONFIG } from "@/config/hederaConfig";
 const metadata = {
   name: "Vistia TA Dashboard",
   description: "AI-Powered Trading Platform",
-  icons: ["http://localhost:5173/icon.svg"],
+  icons: [`https://gist.githubusercontent.com/nguyenPhuocLoc99/d7309d2c19cc0351bc32a72d7dabb13d/raw/84a4a80d8dd6de140a8fbae80f6cd3e403930929/icon.svg`],
   url: typeof window !== 'undefined' ? window.location.origin : "http://localhost:5173"
 };
 

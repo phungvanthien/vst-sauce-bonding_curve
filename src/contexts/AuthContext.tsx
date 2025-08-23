@@ -14,14 +14,14 @@ type User = {
   accurateSignals: number;
   accurateRate: number;
   isActive: boolean;
-  walletType: 'metamask' | 'hashpack'; // Thêm loại ví
+  walletType: "hashpack"; // Only HashPack wallet supported
 };
 
 type AuthContextType = {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (walletAddress: string, walletType: 'metamask' | 'hashpack') => Promise<void>;
+  login: (walletAddress: string, walletType: "hashpack") => Promise<void>;
   logout: () => void;
   toggleAgentStatus: () => Promise<void>;
   refreshUserData: () => Promise<void>;
@@ -46,7 +46,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const sessionId = localStorage.getItem("cyrus_session_id");
         const walletAddress = localStorage.getItem("cyrus_wallet_address");
-        const walletType = localStorage.getItem("cyrus_wallet_type") as 'metamask' | 'hashpack';
+        const walletType = localStorage.getItem(
+          "cyrus_wallet_type"
+        ) as "hashpack";
 
         if (!sessionId || !walletAddress) {
           setIsLoading(false);
@@ -67,7 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           accurateSignals: 3800,
           accurateRate: 76,
           isActive: true,
-          walletType: walletType || 'metamask',
+          walletType: walletType || "hashpack",
         });
       } catch (error) {
         console.error("Session validation error:", error);
@@ -122,7 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const login = async (walletAddress: string, walletType: 'metamask' | 'hashpack') => {
+  const login = async (walletAddress: string, walletType: "hashpack") => {
     try {
       setIsLoading(true);
 
@@ -160,7 +162,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error("Login error:", error);
       toast({
         title: "Authentication Failed",
-        description: error instanceof Error ? error.message : "Please try again",
+        description:
+          error instanceof Error ? error.message : "Please try again",
         variant: "destructive",
       });
       throw error;

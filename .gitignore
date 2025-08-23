@@ -248,3 +248,6 @@ playwright/.cache/
 src/config/local.ts
 src/config/local.js
 src/config/config.local.*
+
+# Scratch
+scratch.*
