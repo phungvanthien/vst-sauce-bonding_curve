@@ -19,7 +19,6 @@ export interface Vault {
   apy: number;
   riskLevel: string;
   status: string;
-  isReal?: boolean;
 }
 
 // Initialize vaults - now only creates real vaults
@@ -27,7 +26,7 @@ export function initializeVaults(): Vault[] {
   return [];
 }
 
-// Create real vault configuration
+// Create vault configuration
 export function createRealVault(): Vault {
   return {
     id: 1,
@@ -47,7 +46,6 @@ export function createRealVault(): Vault {
     apy: HEDERA_CONFIG.vaultInfo.apy,
     riskLevel: HEDERA_CONFIG.vaultInfo.riskLevel,
     status: "active",
-    isReal: true,
   };
 }
 

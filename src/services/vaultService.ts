@@ -8,8 +8,8 @@ import {
 } from "@hashgraph/sdk";
 import { ethers } from 'ethers';
 import { accountIdToEvmAddress } from '@/utils/account-utils';
-import { contractIdToEvmAddress } from '@/utils/contract-utils';
-import { getTokenDecimal, toSmallestUnits, fromSmallestUnits } from '@/utils/token-utils';
+import { contractIdToEvmAliasAddress, evmAliasAddressToContractId } from '@/utils/contract-utils';
+import { toSmallestUnits, fromSmallestUnits } from '@/utils/token-utils';
 
 // Import the real Vault ABI that works in tests
 import vaultABI from '../../Vault.json';
@@ -126,12 +126,14 @@ export interface VaultServiceConfig {
   tokenDecimals?: number;
   
   // Runtime State (optional for initialization)
-  signer?: any;
+  manager?: any;
+  pairingData?: any;
   vaultAddress?: string;
   
   // Internal State (managed by service, not user-configurable)
   ethersProvider?: ethers.providers.JsonRpcProvider | null;
-  vaultContractId?: ContractId | null;
+  vaultContractId?: string | null;
+  signer?: any;
 }
 
 /**
@@ -155,18 +157,68 @@ export class VaultService {
     
     // Token Configuration
     tokenDecimals: 6,
+    
+    // Runtime State
+    manager: null,
+    pairingData: null,
+    vaultAddress: undefined,
+    
+    // Internal State
+    ethersProvider: null,
+    vaultContractId: null,
+    signer: null
   };
 
   constructor(config: VaultServiceConfig = {}) {
     this.config = { ...this.DEFAULT_CONFIG, ...config };
+
+    console.log('🔍 VaultService constructor called with config:');
+    console.dir(this.config, { depth: null });
     
-    // Initialize vault contract if address provided
-    if (config.vaultAddress) {
-      try {
-        this.config.vaultContractId = ContractId.fromString(config.vaultAddress);
-      } catch (error) {
-        console.error('❌ Error initializing vault contract in constructor:', error);
+    // Initialize signer if manager and pairingData are provided
+    if (config.manager && config.pairingData) {
+      this.config.signer = this.getSigner(config.manager, config.pairingData);
+    }
+
+    // Debug log
+    console.log('🔍 VaultService initialized with config:');
+    console.dir(this.config, { depth: null });
+  }
+
+  /**
+   * Initialize vault contract configuration asynchronously
+   * This method should be called after construction to set up vault contract
+   */
+  async initializeVaultContract(): Promise<void> {
+    try {
+      // Check if we have vaultAddress but no vaultContractId
+      if (this.config.vaultAddress && !this.config.vaultContractId) {
+        console.log('🔧 Converting vaultAddress to vaultContractId:', this.config.vaultAddress);
+        this.config.vaultContractId = await evmAliasAddressToContractId(this.config.vaultAddress);
+        console.log('✅ vaultContractId set:', this.config.vaultContractId);
       }
+      
+      // Check if we have vaultContractId but no vaultAddress
+      if (this.config.vaultContractId && !this.config.vaultAddress) {
+        console.log('🔧 Converting vaultContractId to vaultAddress:', this.config.vaultContractId);
+        this.config.vaultAddress = await contractIdToEvmAliasAddress(this.config.vaultContractId);
+        console.log('✅ vaultAddress set:', this.config.vaultAddress);
+      }
+      
+      // If both exist, validate they match
+      if (this.config.vaultAddress && this.config.vaultContractId) {
+        console.log('🔍 Validating vaultAddress and vaultContractId match...');
+        const expectedEvmAddress = await contractIdToEvmAliasAddress(this.config.vaultContractId);
+        if (this.config.vaultAddress !== expectedEvmAddress) {
+          console.warn('⚠️ vaultAddress and vaultContractId do not match, updating vaultAddress');
+          this.config.vaultAddress = expectedEvmAddress;
+        }
+        console.log('✅ Validation complete');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error initializing vault contract:', error);
+      throw error;
     }
   }
 
@@ -182,15 +234,32 @@ export class VaultService {
   }
 
   /**
+   * Set manager and pairing data to initialize signer
+   */
+  setManagerAndPairingData(manager: any, pairingData: any): void {
+    this.config.manager = manager;
+    this.config.pairingData = pairingData;
+    this.config.signer = this.getSigner(manager, pairingData);
+  }
+
+  /**
    * Set vault contract after construction (if not provided in constructor)
    */
-  setVaultContract(vaultAddress: string): void {
+  async setVaultContract(vaultAddress: string): Promise<void> {
     try {
-      this.config.vaultContractId = ContractId.fromString(vaultAddress);
+      this.config.vaultAddress = vaultAddress;
+      await this.initializeVaultContract();
     } catch (error) {
       console.error('❌ Error setting vault contract:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get signer from manager and pairing data
+   */
+  private getSigner(manager: any, pairingData: any): any {
+    return manager.getSigner(pairingData.accountIds[0]);
   }
 
   // ============================================================================
@@ -229,7 +298,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
 
       // Get all vault state in parallel
@@ -251,7 +320,7 @@ export class VaultService {
       // Convert values
       const totalSharesNum = _totalShares.toNumber();
       const totalBalanceRaw = _totalBalance.toNumber ? _totalBalance.toNumber() : Number(_totalBalance);
-      const totalBalanceNum = await fromSmallestUnits(totalBalanceRaw, this.config.tokenDecimals?.toString());
+      const totalBalanceNum = await fromSmallestUnits(totalBalanceRaw, token1Address);
 
       // Calculate APY
       const computedApy = totalSharesNum > 0 ? Math.max(((totalBalanceRaw - totalSharesNum) / totalSharesNum) * 100, 0) : 0;
@@ -286,7 +355,7 @@ export class VaultService {
 
       await this.delay(this.config.callDelay!);
       
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       const ts: any = await vaultContract.runTimestamp();
       
@@ -307,7 +376,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
       
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
         const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       const ts: any = await vaultContract.stopTimestamp();
       
@@ -328,7 +397,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
       
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       const address = await vaultContract.token1();
       return typeof address === 'string' ? address : address.toString();
@@ -347,7 +416,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       const address = await vaultContract.token2();
       return typeof address === 'string' ? address : address.toString();
@@ -366,12 +435,15 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
       const shares = await vaultContract.shares(userEVMAddress);
       const value = shares?.toNumber ? shares.toNumber() : Number(shares);
-      return await fromSmallestUnits(value, this.config.tokenDecimals?.toString());
+      
+      // Get token1 address for conversion
+      const token1Address = await vaultContract.token1();
+      return await fromSmallestUnits(value, token1Address);
     } catch (error) {
       console.error('❌ Error getting user shares:', error);
       return 0;
@@ -381,17 +453,23 @@ export class VaultService {
   /**
    * Get token balance for user
    */
-  async getTokenBalance(tokenAddress: string, userAddress: string): Promise<number> {
+  async getTokenBalance(tokenAddress: string, userAddressorId: string): Promise<number> {
     try {
       await this.ensureProvider();
       
-      // Convert Hedera account ID to EVM address
-      const evmUserAddress = await accountIdToEvmAddress(userAddress);
+      // Convert Hedera account ID to EVM address if needed
+      let evmUserAddress = userAddressorId;
+      if (userAddressorId.startsWith('0.')) {
+        evmUserAddress = await accountIdToEvmAddress(userAddressorId);
+      } else {
+        evmUserAddress = userAddressorId;
+      }
       
       // Use ethers.js for balance query
       const provider = this.getEthersProvider();
+      const contractEvmAddress = await contractIdToEvmAliasAddress(tokenAddress);
       const contract = new ethers.Contract(
-        await contractIdToEvmAddress(tokenAddress),
+        contractEvmAddress,
         ['function balanceOf(address owner) view returns (uint256)'],
         provider
       );
@@ -413,7 +491,7 @@ export class VaultService {
       
       // Convert addresses
       const evmOwnerAddress = await accountIdToEvmAddress(ownerAddress);
-      const evmSpenderAddress = await contractIdToEvmAddress(spenderAddress);
+      const evmSpenderAddress = await contractIdToEvmAliasAddress(spenderAddress);
       
       const { ContractCallQuery, ContractFunctionParameters } = await import('@hashgraph/sdk');
       const params = new ContractFunctionParameters()
@@ -421,7 +499,7 @@ export class VaultService {
         .addAddress(evmSpenderAddress);
       
       const query = new ContractCallQuery()
-        .setContractId(ContractId.fromString(tokenAddress))
+        .setContractId(this.config.vaultContractId)
         .setFunction(TOKEN_ABI.allowance, params);
 
       const response = await query.execute(this.config.signer);
@@ -539,12 +617,12 @@ export class VaultService {
     try {
       await this.ensureProvider();
       
-      const amountSmallest = await toSmallestUnits(amount, this.config.tokenDecimals?.toString());
+      const amountSmallest = await toSmallestUnits(amount, tokenAddress);
       if (amountSmallest <= 0) {
         throw new Error('Approval amount must be greater than 0');
       }
       
-      const evmSpenderAddress = await contractIdToEvmAddress(spenderAddress);
+      const evmSpenderAddress = await contractIdToEvmAliasAddress(spenderAddress);
       
       const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
       
@@ -553,7 +631,7 @@ export class VaultService {
         .addUint256(amountSmallest);
       
       const transaction = new ContractExecuteTransaction()
-        .setContractId(ContractId.fromString(tokenAddress))
+        .setContractId(this.config.vaultContractId)
         .setGas(500000)
         .setFunction(TOKEN_ABI.approve, params);
 
@@ -578,7 +656,9 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const amountSmallest = await toSmallestUnits(amount, this.config.tokenDecimals?.toString());
+      // Get token1 address for conversion
+      const token1Address = await this.getToken1Address();
+      const amountSmallest = await toSmallestUnits(amount, token1Address);
       
       const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
       
@@ -671,7 +751,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
       const shareholders = await vaultContract.getShareholders();
@@ -697,7 +777,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
       const shareholders = await vaultContract.getShareholders();
@@ -735,7 +815,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
       const isWhitelisted = await vaultContract.isWhitelisted(address);
@@ -758,7 +838,7 @@ export class VaultService {
         throw new Error('Vault contract not initialized');
       }
 
-      const vaultEvm = await contractIdToEvmAddress(this.config.vaultContractId.toString());
+      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
       const withdrawalAmount = await vaultContract.calculateWithdrawalAmount(shareAmount);

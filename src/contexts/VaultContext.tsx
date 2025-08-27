@@ -19,12 +19,7 @@ import {
   validateVaultForDeposit,
   validateVaultForWithdraw,
 } from "@/utils/vault-utils";
-import {
-  getUserAddress,
-  isUserConnected,
-  validateUserPermissions,
-  accountIdToEvmAddress,
-} from "@/utils/account-utils";
+import { accountIdToEvmAddress } from "@/utils/account-utils";
 import { validateTokenAmount, isHBARToken } from "@/utils/token-utils";
 import { HEDERA_CONFIG } from "@/config/hederaConfig";
 import { toast } from "@/hooks/use-toast";
@@ -57,7 +52,10 @@ interface VaultContextType {
   checkWithdrawStatus: () => Promise<void>;
 
   // User-specific vault service instance
-  getUserVaultService: () => VaultService | null;
+  getUserVaultService: () => Promise<VaultService | null>;
+
+  // HashConnect integration
+  setHashConnectData: (manager: any, pairingData: any) => void;
 }
 
 const VaultContext = createContext<VaultContextType | null>(null);
@@ -87,15 +85,37 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   const [vaultService, setVaultService] = useState<VaultService | null>(null);
 
   // Get or create vault service
-  const getUserVaultService = useCallback((): VaultService | null => {
-    if (!vaultService) {
-      // Create service with default config
-      const newService = new VaultService();
-      setVaultService(newService);
-      return newService;
-    }
-    return vaultService;
-  }, [vaultService]);
+  const getUserVaultService =
+    useCallback(async (): Promise<VaultService | null> => {
+      if (!vaultService) {
+        // Create service with vault contract configuration
+        const newService = new VaultService({
+          vaultAddress: import.meta.env.VITE_VAULT_ADDRESS,
+        });
+
+        // Initialize vault contract asynchronously
+        try {
+          await newService.initializeVaultContract();
+          console.log("✅ VaultService initialized successfully");
+        } catch (error) {
+          console.error("❌ Error initializing VaultService:", error);
+        }
+
+        setVaultService(newService);
+        return newService;
+      }
+      return vaultService;
+    }, [vaultService]);
+
+  // Set HashConnect data for vault service
+  const setHashConnectData = useCallback(
+    (manager: any, pairingData: any) => {
+      if (vaultService) {
+        vaultService.setManagerAndPairingData(manager, pairingData);
+      }
+    },
+    [vaultService]
+  );
 
   // Initialize vaults
   useEffect(() => {
@@ -130,44 +150,39 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
     async (userAddress?: string) => {
       if (!userAddress) return;
       try {
-        // Only load real vault data
-        const realVault = vaults.find((v) => v.isReal);
-        if (!realVault) {
+        // Load vault data for the first vault
+        const vault = vaults[0];
+        if (!vault) {
           console.log(
-            "[VaultContext] ℹ️ No real vault found, skipping real-time updates"
+            "[VaultContext] ℹ️ No vault found, skipping real-time updates"
           );
           return;
         }
 
-        console.log(
-          "[VaultContext] 📊 Loading real vault data:",
-          realVault.name
-        );
+        console.log("[VaultContext] 📊 Loading vault data:", vault.name);
 
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
 
-        // Set vault contract for real vault
-        vaultService.setVaultContract(realVault.vaultAddress);
+        // Set vault contract
+        await vaultService.setVaultContract(vault.vaultAddress);
 
-        // Get real vault state
-        const vaultState = await vaultService.getVaultInfo(
-          realVault.vaultAddress
-        );
+        // Get vault state
+        const vaultState = await vaultService.getVaultInfo(vault.vaultAddress);
 
         // Update vault states
         setVaultStates((prev) => ({
           ...prev,
-          [realVault.vaultAddress]: vaultState,
+          [vault.vaultAddress]: vaultState,
         }));
 
-        // Update real vault data with timestamps and APY from getVaultInfo
+        // Update vault data with timestamps and APY from getVaultInfo
         console.log("[VaultContext] 🔍 Vault state:", vaultState.apy);
         setVaults((prev) =>
           prev.map((v) =>
-            v.id === realVault.id
+            v.id === vault.id
               ? {
                   ...v,
                   totalShares: vaultState.totalShares,
@@ -183,15 +198,15 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
           )
         );
 
-        console.log("[VaultContext] ✅ Real vault updated successfully");
+        console.log("[VaultContext] ✅ Vault updated successfully");
 
-        // Load user token balance only for real vault
+        // Load user token balance
         if (vaultState.token1Address) {
           const balanceSmallest = await vaultService.getTokenBalance(
             vaultState.token1Address,
             userAddress
           );
-          const tokenDecimals = realVault.token === "HBAR" ? 8 : 6;
+          const tokenDecimals = vault.token === "HBAR" ? 8 : 6;
           const balanceInUnits = balanceSmallest / Math.pow(10, tokenDecimals);
           setUserTokenBalance(balanceInUnits);
         }
@@ -213,12 +228,12 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       );
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
 
-        vaultService.setVaultContract(selectedVault.vaultAddress);
+        await vaultService.setVaultContract(selectedVault.vaultAddress);
 
         // Convert user address to EVM address for getUserShares
         const evmUserAddress = await accountIdToEvmAddress(userAddress);
@@ -249,7 +264,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       if (!selectedVault) return;
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
@@ -270,7 +285,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       if (!selectedVault) return;
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
@@ -293,8 +308,11 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   // Approve token
   const approveToken = useCallback(
     async (amount: number, userAddress?: string) => {
-      if (!selectedVault || !userAddress) {
-        throw new Error("No vault selected or user not connected");
+      if (!selectedVault) {
+        throw new Error("No vault selected not connected");
+      }
+      if (!userAddress) {
+        throw new Error("No user address provided");
       }
 
       // Check if vault uses HBAR (no approval needed)
@@ -313,18 +331,14 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       });
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
 
-        // Set vault contract if real vault
-        if (selectedVault.isReal) {
-          console.log(
-            "[VaultContext] 🔧 Setting vault contract for approval..."
-          );
-          vaultService.setVaultContract(selectedVault.vaultAddress);
-        }
+        // Set vault contract
+        console.log("[VaultContext] 🔧 Setting vault contract for approval...");
+        await vaultService.setVaultContract(selectedVault.vaultAddress);
 
         console.log(
           "[VaultContext] 👤 User address for approval:",
@@ -398,8 +412,11 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   // Deposit into vault
   const deposit = useCallback(
     async (amount: number, userAddress?: string) => {
-      if (!selectedVault || !userAddress) {
-        throw new Error("No vault selected or user not connected");
+      if (!selectedVault) {
+        throw new Error("No vault selected not connected");
+      }
+      if (!userAddress) {
+        throw new Error("No user address provided");
       }
 
       validateVaultForDeposit(selectedVault);
@@ -408,18 +425,17 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       console.log("[VaultContext] 💰 Starting deposit process...", {
         vault: selectedVault.name,
         amount,
-        isRealVault: selectedVault.isReal,
       });
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
 
         // Set vault contract
         console.log("[VaultContext] 🔧 Setting vault contract for deposit...");
-        vaultService.setVaultContract(selectedVault.vaultAddress);
+        await vaultService.setVaultContract(selectedVault.vaultAddress);
 
         // Execute deposit via HashConnect
         console.log(
@@ -489,8 +505,11 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   // Withdraw from vault
   const withdraw = useCallback(
     async (amount: number, userAddress?: string) => {
-      if (!selectedVault || !userAddress) {
-        throw new Error("No vault selected or user not connected");
+      if (!selectedVault) {
+        throw new Error("No vault selected not connected");
+      }
+      if (!userAddress) {
+        throw new Error("No user address provided");
       }
 
       validateVaultForWithdraw(selectedVault);
@@ -500,7 +519,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       }
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
@@ -549,7 +568,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       if (!selectedVault) return;
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
@@ -585,7 +604,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       }
 
       try {
-        const vaultService = getUserVaultService();
+        const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
@@ -671,6 +690,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         requestWithdraw,
         checkWithdrawStatus,
         getUserVaultService,
+        setHashConnectData,
       }}
     >
       {children}

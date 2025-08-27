@@ -3,7 +3,7 @@
  * @param contractId - The Hedera contract ID
  * @returns The EVM alias address of the given Hedera contract ID
  */
-export async function contractIdToEvmAddress(contractId: string): Promise<`0x${string}`> {
+export async function contractIdToEvmAliasAddress(contractId: string): Promise<`0x${string}`> {
     try {
         if (!import.meta.env.VITE_MIRROR_NODE_URL) {
             throw new Error('VITE_MIRROR_NODE_URL is not set')
@@ -21,4 +21,21 @@ export async function contractIdToEvmAddress(contractId: string): Promise<`0x${s
         console.error('❌ Error converting contract ID to EVM address:', error);
         throw new Error('Error converting contract ID to EVM address');
     }
+}
+
+/**
+ * Convert EVM alias address to Hedera contract ID
+ * @param evmAddress - The EVM alias address
+ * @returns The Hedera contract ID of the given EVM alias address
+ */
+export async function evmAliasAddressToContractId(evmAddress: string): Promise<string> {
+    const baseUrl = 'https://mainnet.mirrornode.hedera.com/api/v1';
+    const url = `${baseUrl}/contracts/${encodeURIComponent(evmAddress)}`;
+    const res = await fetch(url);
+    if (res.ok) {
+        const data = await res.json();
+        const cid = data.contract_id as string;
+        return cid;
+    }
+    throw new Error('Failed to convert EVM address to Hedera contract ID');
 }
