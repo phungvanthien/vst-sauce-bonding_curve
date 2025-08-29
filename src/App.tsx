@@ -22,7 +22,7 @@ const layoutedRoutesList: layoutedRoutesListType[] = [
     element: <Dashboard />,
   },
   {
-    path: "/SignalStatistics",
+    path: "/signalStatistics",
     element: <Dashboard />,
   },
   {

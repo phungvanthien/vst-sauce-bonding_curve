@@ -12,37 +12,10 @@ import { contractIdToEvmAliasAddress, evmAliasAddressToContractId } from '@/util
 import { toSmallestUnits, fromSmallestUnits } from '@/utils/token-utils';
 
 // Import the real Vault ABI that works in tests
-import vaultABI from '../../Vault.json';
+import vaultABI from '../../VaultABI.json';
 
 // Use the real ABI for ethers.js operations
 const VAULT_ABI_ETHERS = vaultABI.abi;
-
-// Keep the simple ABI for Hedera SDK operations
-// const VAULT_ABI = {
-//   // View functions
-//   getVaultState: "getVaultState()",
-//   shares: "shares(address)",
-//   totalShares: "totalShares()",
-//   getShareholderCount: "getShareholderCount()",
-//   getShareholders: "getShareholders()",
-//   isWhitelisted: "isWhitelisted(address)",
-//   calculateWithdrawalAmount: "calculateWithdrawalAmount(uint256)",
-//   runTimestamp: "runTimestamp()",
-//   stopTimestamp: "stopTimestamp()",
-//   token1: "token1()",
-//   token2: "token2()",
-  
-//   // State changing functions
-//   deposit: "deposit(uint256)",
-//   withdraw: "withdraw()",
-//   enableWithdrawals: "enableWithdrawals()",
-  
-//   // Events
-//   Deposited: "Deposited(address,uint256,uint256)",
-//   Withdrawn: "Withdrawn(address,uint256,uint256)",
-//   DepositsClosed: "DepositsClosed()",
-//   WithdrawalsEnabled: "WithdrawalsEnabled()"
-// };
 
 // Token ABI - Hedera smart contract functions
 const TOKEN_ABI = {

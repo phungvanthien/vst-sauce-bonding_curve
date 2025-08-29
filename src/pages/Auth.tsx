@@ -12,7 +12,7 @@ const Auth = () => {
   // MetaMask functionality removed - only HashPack supported
 
   if (isAuthenticated && !isLoading) {
-    return <Navigate to="/Portfolio" replace />;
+    return <Navigate to="/portfolio" replace />;
   }
 
   return (
@@ -37,7 +37,8 @@ const Auth = () => {
                 Connect Your Wallet
               </h2>
               <p className="text-sm text-cyrus-textSecondary">
-                Choose your preferred wallet to access the Vistia Signals Dashboard
+                Choose your preferred wallet to access the Vistia Signals
+                Dashboard
               </p>
             </div>
 
