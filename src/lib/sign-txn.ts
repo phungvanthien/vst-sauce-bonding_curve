@@ -13,6 +13,7 @@ import {
 } from "@hashgraph/sdk";
 import { providers, Contract, utils } from 'ethers';
 import { tokenAddress } from "@/config/tokenAddress";
+import { VAULTS_CONFIG } from "@/config/hederaConfig";
 
 // Response structure for all signing functions
 export interface SignResponse {
@@ -44,10 +45,12 @@ function toContractId(evmAddress: string): ContractId {
 
 // Helper: get vault address
 function getVaultAddress(): Address {
-  if (!import.meta.env.VITE_VAULT_ADDRESS) {
-    throw new Error('VITE_VAULT_ADDRESS is not set in environment variables');
+  // Use the first vault address from config
+  const firstVault = VAULTS_CONFIG.vaults[0];
+  if (!firstVault?.vaultAddress) {
+    throw new Error('No vault address configured in VAULTS_CONFIG');
   }
-  return import.meta.env.VITE_VAULT_ADDRESS as Address;
+  return firstVault.vaultAddress as Address;
 }
 
 // Helper: get mirror node url

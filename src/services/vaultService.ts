@@ -18,31 +18,31 @@ import vaultABI from '../../Vault.json';
 const VAULT_ABI_ETHERS = vaultABI.abi;
 
 // Keep the simple ABI for Hedera SDK operations
-const VAULT_ABI = {
-  // View functions
-  getVaultState: "getVaultState()",
-  shares: "shares(address)",
-  totalShares: "totalShares()",
-  getShareholderCount: "getShareholderCount()",
-  getShareholders: "getShareholders()",
-  isWhitelisted: "isWhitelisted(address)",
-  calculateWithdrawalAmount: "calculateWithdrawalAmount(uint256)",
-  runTimestamp: "runTimestamp()",
-  stopTimestamp: "stopTimestamp()",
-  token1: "token1()",
-  token2: "token2()",
+// const VAULT_ABI = {
+//   // View functions
+//   getVaultState: "getVaultState()",
+//   shares: "shares(address)",
+//   totalShares: "totalShares()",
+//   getShareholderCount: "getShareholderCount()",
+//   getShareholders: "getShareholders()",
+//   isWhitelisted: "isWhitelisted(address)",
+//   calculateWithdrawalAmount: "calculateWithdrawalAmount(uint256)",
+//   runTimestamp: "runTimestamp()",
+//   stopTimestamp: "stopTimestamp()",
+//   token1: "token1()",
+//   token2: "token2()",
   
-  // State changing functions
-  deposit: "deposit(uint256)",
-  withdraw: "withdraw()",
-  enableWithdrawals: "enableWithdrawals()",
+//   // State changing functions
+//   deposit: "deposit(uint256)",
+//   withdraw: "withdraw()",
+//   enableWithdrawals: "enableWithdrawals()",
   
-  // Events
-  Deposited: "Deposited(address,uint256,uint256)",
-  Withdrawn: "Withdrawn(address,uint256,uint256)",
-  DepositsClosed: "DepositsClosed()",
-  WithdrawalsEnabled: "WithdrawalsEnabled()"
-};
+//   // Events
+//   Deposited: "Deposited(address,uint256,uint256)",
+//   Withdrawn: "Withdrawn(address,uint256,uint256)",
+//   DepositsClosed: "DepositsClosed()",
+//   WithdrawalsEnabled: "WithdrawalsEnabled()"
+// };
 
 // Token ABI - Hedera smart contract functions
 const TOKEN_ABI = {
@@ -134,6 +134,7 @@ export interface VaultServiceConfig {
   ethersProvider?: ethers.providers.JsonRpcProvider | null;
   vaultContractId?: string | null;
   signer?: any;
+  isInitialized?: boolean;
 }
 
 /**
@@ -166,7 +167,8 @@ export class VaultService {
     // Internal State
     ethersProvider: null,
     vaultContractId: null,
-    signer: null
+    signer: null,
+    isInitialized: false
   };
 
   constructor(config: VaultServiceConfig = {}) {
@@ -190,6 +192,12 @@ export class VaultService {
    * This method should be called after construction to set up vault contract
    */
   async initializeVaultContract(): Promise<void> {
+    // Prevent repeated initialization
+    if (this.config.isInitialized) {
+      console.log('🔍 Vault contract already initialized, skipping...');
+      return;
+    }
+
     try {
       // Check if we have vaultAddress but no vaultContractId
       if (this.config.vaultAddress && !this.config.vaultContractId) {
@@ -210,13 +218,17 @@ export class VaultService {
         console.log('🔍 Validating vaultAddress and vaultContractId match...');
         const expectedEvmAddress = await contractIdToEvmAliasAddress(this.config.vaultContractId);
         if (this.config.vaultAddress !== expectedEvmAddress) {
-          console.warn('⚠️ vaultAddress and vaultContractId do not match, updating vaultAddress');
-          this.config.vaultAddress = expectedEvmAddress;
+          console.warn('⚠️ vaultAddress and vaultContractId do not match, but keeping original address');
+          // Don't update the vaultAddress to prevent infinite loops
+          // The contract ID is what matters for operations
         }
         console.log('✅ Validation complete');
       }
       
-    } catch (error) {
+      // Mark as initialized
+      this.config.isInitialized = true;
+      
+      } catch (error) {
       console.error('❌ Error initializing vault contract:', error);
       throw error;
     }
@@ -247,12 +259,34 @@ export class VaultService {
    */
   async setVaultContract(vaultAddress: string): Promise<void> {
     try {
+      // If the vault address is the same and already initialized, skip
+      if (this.config.vaultAddress === vaultAddress && this.config.isInitialized) {
+        console.log('🔍 Same vault address, skipping re-initialization');
+        return;
+      }
+      
+      // Only reset if we have a different vault address AND we're already initialized
+      if (this.config.vaultAddress !== vaultAddress && this.config.isInitialized) {
+        console.log('🔄 Different vault address detected, resetting initialization');
+        this.config.isInitialized = false;
+        this.config.vaultContractId = null;
+      }
+      
       this.config.vaultAddress = vaultAddress;
       await this.initializeVaultContract();
     } catch (error) {
       console.error('❌ Error setting vault contract:', error);
       throw error;
     }
+  }
+
+  /**
+   * Reset initialization state (useful for testing or when switching vaults)
+   */
+  resetInitialization(): void {
+    this.config.isInitialized = false;
+    this.config.vaultContractId = null;
+    console.log('🔄 Vault service initialization reset');
   }
 
   /**
@@ -668,7 +702,7 @@ export class VaultService {
       const transaction = new ContractExecuteTransaction()
         .setContractId(this.config.vaultContractId)
         .setGas(500000)
-        .setFunction(VAULT_ABI.deposit, params);
+        .setFunction('deposit', params);
 
       const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
       const response = await frozenTransaction.executeWithSigner(this.config.signer);
@@ -676,64 +710,6 @@ export class VaultService {
       return response;
     } catch (error) {
       console.error('❌ Error depositing:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Withdraw from vault (manager only)
-   */
-  async withdraw(): Promise<TransactionResponse> {
-    try {
-      await this.ensureProvider();
-      
-      if (!this.config.vaultContractId) {
-        throw new Error('Vault contract not initialized');
-      }
-
-      const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
-      
-      const params = new ContractFunctionParameters();
-      const transaction = new ContractExecuteTransaction()
-        .setContractId(this.config.vaultContractId)
-        .setGas(500000)
-        .setFunction(VAULT_ABI.withdraw, params);
-
-      const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
-      const response = await frozenTransaction.executeWithSigner(this.config.signer);
-      
-      return response;
-    } catch (error) {
-      console.error('❌ Error withdrawing:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Enable withdrawals (manager only)
-   */
-  async enableWithdrawals(): Promise<TransactionResponse> {
-    try {
-      await this.ensureProvider();
-      
-      if (!this.config.vaultContractId) {
-        throw new Error('Vault contract not initialized');
-      }
-
-      const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
-      
-      const params = new ContractFunctionParameters();
-      const transaction = new ContractExecuteTransaction()
-        .setContractId(this.config.vaultContractId)
-        .setGas(200000)
-        .setFunction(VAULT_ABI.enableWithdrawals, params);
-
-      const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
-      const response = await frozenTransaction.executeWithSigner(this.config.signer);
-      
-      return response;
-    } catch (error) {
-      console.error('❌ Error enabling withdrawals:', error);
       throw error;
     }
   }

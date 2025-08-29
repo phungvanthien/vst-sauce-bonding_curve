@@ -1,5 +1,12 @@
 import type { Id, Address } from '@/types/types'
 import { TokenId } from '@hashgraph/sdk'
+import { ethers } from 'ethers'
+import { 
+  AccountAllowanceApproveTransaction,
+  ContractId,
+  Long
+} from '@hashgraph/sdk'
+import { evmAliasAddressToContractId } from './contract-utils'
 
 // Cache interface
 interface TokenDecimalCache {
@@ -167,11 +174,6 @@ export function formatTokenAmount(amount: number, tokenType: string = 'USDC'): s
     }).format(amount);
 }
 
-// Check if token is HBAR
-export function isHBARToken(tokenType: string): boolean {
-    return tokenType === 'HBAR';
-}
-
 // Validate token amount
 export function validateTokenAmount(amount: number, userBalance: number, tokenType: string): void {
     if (amount <= 0) {
@@ -180,19 +182,6 @@ export function validateTokenAmount(amount: number, userBalance: number, tokenTy
     
     if (amount > userBalance) {
         throw new Error(`Insufficient ${tokenType} balance. You have ${userBalance} ${tokenType} but need ${amount} ${tokenType}`);
-    }
-}
-
-// Convert Hedera contract ID to EVM address (0x...) string
-export function hederaContractIdToEvmAddress(contractId: string): string {
-    try {
-        // For now, return a placeholder since this function isn't used in the current codebase
-        // and the dynamic import approach would require making this function async
-        console.warn('hederaContractIdToEvmAddress: This function needs to be refactored for browser compatibility');
-        return '0x' + '0'.repeat(40);
-    } catch (error) {
-        console.error('❌ Error converting contract ID to EVM address:', error);
-        return '0x' + '0'.repeat(40);
     }
 }
 
@@ -220,4 +209,339 @@ export function getCacheStats(): { entries: number; keys: string[] } {
         entries: Object.keys(cache).length,
         keys: Object.keys(cache)
     }
+}
+
+// ============================================================================
+// TOKEN ID UTILS
+// ============================================================================
+
+/**
+ * Convert token ID to EVM address
+ * @param tokenId - The token ID
+ * @returns The EVM address
+ */
+export function tokenIdToEvmAddress(tokenId: string) {
+    const id = TokenId.fromString(tokenId);
+    const evmAddress = id.toEvmAddress();
+    return evmAddress;
+}
+
+/**
+ * Convert EVM address to token ID
+ * @param evmAddress - The token's EVM address
+ * @returns The token ID
+ */
+export function evmAddressToTokenId(evmAddress: string) {
+    const id = TokenId.fromEvmAddress(0, 0, evmAddress);
+    return id.toString();
+}
+
+/**
+ * Check if token is HBAR
+ * @param tokenType - The token type
+ * @returns True if token is HBAR, false otherwise
+ */
+export function isHBARToken(tokenType: string): boolean {
+    return tokenType === 'HBAR';
+}
+
+// ============================================================================
+// TOKEN APPROVAL FUNCTIONS
+// ============================================================================
+
+/**
+ * Interface for token approval response
+ */
+export interface TokenApprovalResponse {
+  success: boolean;
+  transactionHash?: string;
+  error?: string;
+  data?: any;
+}
+
+/**
+ * Interface for token allowance check response
+ */
+export interface TokenAllowanceResponse {
+  allowance: bigint;
+  isSufficient: boolean;
+  requiredAmount: bigint;
+}
+
+/**
+ * Get RPC provider for Hedera network
+ */
+function getHederaProvider(): ethers.providers.JsonRpcProvider {
+  const rpcUrl = import.meta.env.VITE_HEDERA_RPC_URL || 'https://mainnet.hashio.io/api';
+  return new ethers.providers.JsonRpcProvider(rpcUrl);
+}
+
+/**
+ * Get signer from HashConnect manager and pairing data
+ */
+function getSigner(manager: any, pairingData: any): any {
+  return manager.getSigner(pairingData.accountIds[0]);
+}
+
+/**
+ * Check token allowance for a specific spender
+ * @param tokenAddress - The token contract address
+ * @param ownerAddress - The owner's address (who owns the tokens)
+ * @param spenderAddress - The spender's address (who wants to spend the tokens)
+ * @returns Promise<TokenAllowanceResponse> - Current allowance and sufficiency status
+ */
+export async function checkTokenAllowance(
+  tokenAddress: string,
+  ownerAddress: string,
+  spenderAddress: string,
+  requiredAmount?: bigint
+): Promise<TokenAllowanceResponse> {
+  try {
+    console.log('[token-utils] Checking token allowance:', {
+      tokenAddress,
+      ownerAddress,
+      spenderAddress,
+      requiredAmount: requiredAmount?.toString()
+    });
+
+    const provider = getHederaProvider();
+    
+    // ERC20 allowance function ABI
+    const abi = [
+      'function allowance(address owner, address spender) external view returns (uint256)'
+    ];
+    
+    const contract = new ethers.Contract(tokenAddress, abi, provider);
+    const allowance = await contract.allowance(ownerAddress, spenderAddress);
+    
+    const allowanceBigInt = BigInt(allowance.toString());
+    const requiredAmountBigInt = requiredAmount || BigInt(0);
+    const isSufficient = allowanceBigInt >= requiredAmountBigInt;
+
+    console.log('[token-utils] Allowance check result:', {
+      allowance: allowanceBigInt.toString(),
+      requiredAmount: requiredAmountBigInt.toString(),
+      isSufficient
+    });
+
+    return {
+      allowance: allowanceBigInt,
+      isSufficient,
+      requiredAmount: requiredAmountBigInt
+    };
+  } catch (error) {
+    console.error('[token-utils] Error checking token allowance:', error);
+    throw new Error(`Failed to check token allowance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Approve tokens for a spender
+ * @param manager - HashConnect manager instance
+ * @param pairingData - HashConnect pairing data
+ * @param tokenAddress - The token contract address
+ * @param spenderAddress - The spender's address to approve
+ * @param amount - Amount to approve (can be string or bigint)
+ * @param decimals - Token decimals (optional, will be fetched if not provided)
+ * @returns Promise<TokenApprovalResponse> - Approval transaction result
+ */
+export async function approveTokens(
+  manager: any,
+  pairingData: any,
+  tokenAddress: string,
+  spenderAddress: string,
+  amount: string | bigint,
+  decimals?: number
+): Promise<TokenApprovalResponse> {
+  try {
+    console.log('[token-utils] Approving tokens:', {
+      tokenAddress,
+      spenderAddress,
+      amount: amount.toString(),
+      decimals
+    });
+
+    // Get token decimals if not provided
+    let tokenDecimals = decimals;
+    if (tokenDecimals === undefined) {
+      tokenDecimals = await getTokenDecimal(tokenAddress as `0x${string}`);
+    }
+
+    // Convert amount to smallest units if it's a string
+    let amountWei: bigint;
+    if (typeof amount === 'string') {
+      const amountNum = parseFloat(amount);
+      const amountSmallest = Math.round(amountNum * Math.pow(10, tokenDecimals));
+      amountWei = BigInt(amountSmallest);
+    } else {
+      amountWei = amount;
+    }
+
+    console.log('[token-utils] Amount in smallest units:', amountWei.toString());
+
+    // Get signer
+    const signer = getSigner(manager, pairingData);
+
+    // Get ids
+    const tokenId = evmAddressToTokenId(tokenAddress);
+    const ownerId = pairingData.accountIds[0];
+    const spenderId = await evmAliasAddressToContractId(spenderAddress);
+
+    // Create approval transaction
+    const transaction = new AccountAllowanceApproveTransaction()
+      .approveTokenAllowance(tokenId, ownerId, spenderId, Long.fromString(amountWei.toString()));
+
+    // Freeze and execute
+    await transaction.freezeWithSigner(signer);
+    const result = await manager.sendTransaction(pairingData.accountIds[0], transaction);
+
+    console.log('[token-utils] Approval transaction sent:', result.transactionId?.toString());
+
+    return {
+      success: true,
+      transactionHash: result.transactionId?.toString(),
+      data: result
+    };
+  } catch (error) {
+    console.error('[token-utils] Error approving tokens:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+/**
+ * Check if approval is needed and approve if necessary
+ * @param manager - HashConnect manager instance
+ * @param pairingData - HashConnect pairing data
+ * @param tokenAddress - The token contract address
+ * @param ownerAddress - The owner's address
+ * @param spenderAddress - The spender's address
+ * @param requiredAmount - Amount that needs to be approved
+ * @param decimals - Token decimals (optional)
+ * @returns Promise<TokenApprovalResponse> - Result of the approval process
+ */
+export async function checkAndApproveTokens(
+  manager: any,
+  pairingData: any,
+  tokenAddress: string,
+  ownerAddress: string,
+  spenderAddress: string,
+  requiredAmount: string | bigint,
+  decimals?: number
+): Promise<TokenApprovalResponse> {
+  try {
+    console.log('[token-utils] Checking and approving tokens:', {
+      tokenAddress,
+      ownerAddress,
+      spenderAddress,
+      requiredAmount: requiredAmount.toString()
+    });
+
+    // Convert required amount to bigint for comparison
+    let requiredAmountBigInt: bigint;
+    if (typeof requiredAmount === 'string') {
+      const tokenDecimals = decimals || await getTokenDecimal(tokenAddress as `0x${string}`);
+      const amountNum = parseFloat(requiredAmount);
+      const amountSmallest = Math.round(amountNum * Math.pow(10, tokenDecimals));
+      requiredAmountBigInt = BigInt(amountSmallest);
+    } else {
+      requiredAmountBigInt = requiredAmount;
+    }
+
+    // Check current allowance
+    const allowanceResult = await checkTokenAllowance(
+      tokenAddress,
+      ownerAddress,
+      spenderAddress,
+      requiredAmountBigInt
+    );
+
+    // If allowance is sufficient, no approval needed
+    if (allowanceResult.isSufficient) {
+      console.log('[token-utils] Sufficient allowance already exists, no approval needed');
+      return {
+        success: true,
+        data: { message: 'Sufficient allowance already exists' }
+      };
+    }
+
+    console.log('[token-utils] Insufficient allowance, proceeding with approval');
+    console.log('[token-utils] Current allowance:', allowanceResult.allowance.toString());
+    console.log('[token-utils] Required amount:', requiredAmountBigInt.toString());
+
+    // Approve the required amount
+    const approvalResult = await approveTokens(
+      manager,
+      pairingData,
+      tokenAddress,
+      spenderAddress,
+      requiredAmount,
+      decimals
+    );
+
+    if (approvalResult.success) {
+      console.log('[token-utils] Token approval successful');
+    } else {
+      console.error('[token-utils] Token approval failed:', approvalResult.error);
+    }
+
+    return approvalResult;
+  } catch (error) {
+    console.error('[token-utils] Error in check and approve process:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+/**
+ * Wait for transaction to be confirmed on the network
+ * @param transactionHash - Transaction hash to wait for
+ * @param timeoutMs - Timeout in milliseconds (default: 30 seconds)
+ * @returns Promise<void> - Resolves when transaction is confirmed
+ */
+export async function waitForTransactionConfirmation(
+  transactionHash: string,
+  timeoutMs: number = 30000
+): Promise<void> {
+  const startTime = Date.now();
+  const mirrorNodeUrl = import.meta.env.VITE_MIRROR_NODE_URL;
+  
+  if (!mirrorNodeUrl) {
+    throw new Error('VITE_MIRROR_NODE_URL is not set');
+  }
+
+  console.log('[token-utils] Waiting for transaction confirmation:', transactionHash);
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const url = `${mirrorNodeUrl}/transactions/${encodeURIComponent(transactionHash)}?limit=1&order=desc`;
+      const response = await fetch(url);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const entries = data?.transactions ?? [];
+        const status = entries[0]?.result;
+        
+        if (status === 'SUCCESS') {
+          console.log('[token-utils] Transaction confirmed successfully');
+          return;
+        }
+        
+        if (status && status !== 'PENDING' && status !== 'STATUS_UNKNOWN') {
+          throw new Error(`Transaction failed with status: ${status}`);
+        }
+      }
+    } catch (error) {
+      console.warn('[token-utils] Error checking transaction status:', error);
+    }
+    
+    // Wait 1.5 seconds before next check
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+  
+  throw new Error('Timeout waiting for transaction confirmation');
 }

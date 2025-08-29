@@ -1,5 +1,5 @@
-import { VaultState, TraderInfo, Transaction, WithdrawStatus } from '@/services/vaultService';
-import { HEDERA_CONFIG } from '@/config/hederaConfig';
+import { TraderInfo, Transaction, WithdrawStatus, VaultState } from '@/services/vaultService';
+import { VAULTS_CONFIG } from '@/config/hederaConfig';
 
 export interface Vault {
   id: number;
@@ -21,32 +21,56 @@ export interface Vault {
   status: string;
 }
 
-// Initialize vaults - now only creates real vaults
+// Initialize vaults - now creates multiple real vaults
 export function initializeVaults(): Vault[] {
   return [];
 }
 
-// Create vault configuration
-export function createRealVault(): Vault {
+// Create vault configuration for a single vault
+export function createVault(vaultConfig: any, vaultInfo: VaultState): Vault {
   return {
-    id: 1,
-    name: HEDERA_CONFIG.vaultInfo.name,
-    description: HEDERA_CONFIG.vaultInfo.description,
-    token: HEDERA_CONFIG.vaultInfo.token,
-    tokenAddress: HEDERA_CONFIG.contracts.tokenContractId,
-    vaultAddress: HEDERA_CONFIG.contracts.vaultContractId,
-    totalDeposits: 0,
-    totalShares: 0,
-    shareholderCount: 0,
-    maxShareholders: HEDERA_CONFIG.vaultInfo.maxShareholders,
-    runTimestamp: 1754368292-3600*90, // 1 year from now
-    stopTimestamp: 1754368292-3600*30, // 2 years from now
-    depositsClosed: false,
-    withdrawalsEnabled: false,
-    apy: HEDERA_CONFIG.vaultInfo.apy,
-    riskLevel: HEDERA_CONFIG.vaultInfo.riskLevel,
+    id: vaultConfig.id,
+    name: vaultConfig.name,
+    description: vaultConfig.description,
+    token: vaultConfig.token,
+    tokenAddress: vaultConfig.tokenAddress,
+    vaultAddress: vaultConfig.vaultAddress,
+    totalDeposits: vaultInfo.totalBalance,
+    totalShares: vaultInfo.totalShares,
+    shareholderCount: vaultInfo.shareholderCount,
+    maxShareholders: vaultConfig.maxShareholders,
+    runTimestamp: vaultInfo.runTimestamp,
+    stopTimestamp: vaultInfo.stopTimestamp,
+    depositsClosed: vaultInfo.depositsClosed,
+    withdrawalsEnabled: vaultInfo.withdrawalsEnabled,
+    apy: vaultInfo.apy,
+    riskLevel: vaultConfig.riskLevel,
     status: "active",
   };
+}
+
+// Create multiple vaults from config
+export function createMultipleVaults(vaultInfos: Record<string, VaultState>): Vault[] {
+  const vaults: Vault[] = [];
+  
+  for (const vaultConfig of VAULTS_CONFIG.vaults) {
+    // Skip vaults without addresses
+    if (!vaultConfig.vaultAddress) {
+      console.log(`[vault-utils] Skipping vault ${vaultConfig.name} - no address configured`);
+      continue;
+    }
+    
+    const vaultInfo = vaultInfos[vaultConfig.vaultAddress];
+    if (vaultInfo) {
+      const vault = createVault(vaultConfig, vaultInfo);
+      vaults.push(vault);
+      console.log(`[vault-utils] Created vault: ${vault.name} (${vault.vaultAddress})`);
+    } else {
+      console.log(`[vault-utils] No vault info found for ${vaultConfig.name} (${vaultConfig.vaultAddress})`);
+    }
+  }
+  
+  return vaults;
 }
 
 // Generate trader data - now returns empty array since we only use real data
@@ -147,14 +171,5 @@ export function updateVaultAfterDeposit(vault: Vault, amount: number, newShares:
     totalDeposits: vault.totalDeposits + amount,
     totalShares: vault.totalShares + newShares,
     shareholderCount: vault.shareholderCount + (isNewShareholder ? 1 : 0)
-  };
-}
-
-export function updateVaultAfterWithdraw(vault: Vault, withdrawalAmount: number, sharesWithdrawn: number, isLastShareholder: boolean): Vault {
-  return {
-    ...vault,
-    totalDeposits: vault.totalDeposits - withdrawalAmount,
-    totalShares: vault.totalShares - sharesWithdrawn,
-    shareholderCount: vault.shareholderCount - (isLastShareholder ? 1 : 0)
   };
 }

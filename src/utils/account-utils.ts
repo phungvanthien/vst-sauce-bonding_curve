@@ -49,7 +49,7 @@ export async function accountIdToEvmAddress(accountId: string): Promise<`0x${str
         throw new Error('VITE_MIRROR_NODE_URL is not set')
     }
     const baseUrl = import.meta.env.VITE_MIRROR_NODE_URL;
-  const url = `${baseUrl}/api/v1/accounts/${encodeURIComponent(accountId)}`;
+  const url = `${baseUrl}/accounts/${encodeURIComponent(accountId)}`;
   try {
     const res = await fetch(url);
     if (res.ok) {

@@ -1,7 +1,7 @@
 // TypeScript interfaces for HashConnect
 import { HashConnect, HashConnectConnectionState, SessionData } from "hashconnect";
 import { LedgerId } from "@hashgraph/sdk";
-import { HEDERA_CONFIG } from "@/config/hederaConfig";
+import { VAULTS_CONFIG } from "@/config/hederaConfig";
 
 // App metadata for HashPack wallet connection
 const metadata = {
@@ -155,14 +155,9 @@ export class HashConnectManager {
 
       console.log("🔍 HashConnectManager: Using project ID:", projectId);
 
-      // Pick ledger based on app config (default to TESTNET if unspecified)
-      const ledger = (HEDERA_CONFIG.network?.name || "").toLowerCase().includes("mainnet")
-        ? LedgerId.MAINNET
-        : LedgerId.TESTNET;
-
       // Create the hashconnect instance for this user
       this.instance = new HashConnect(
-        ledger,
+        LedgerId.MAINNET,
         projectId,
         metadata,
         true

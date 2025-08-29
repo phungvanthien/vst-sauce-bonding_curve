@@ -5,6 +5,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 import {
   VaultService,
@@ -15,13 +16,12 @@ import {
 } from "@/services/vaultService";
 import {
   Vault,
-  createRealVault,
+  createMultipleVaults,
   validateVaultForDeposit,
-  validateVaultForWithdraw,
 } from "@/utils/vault-utils";
 import { accountIdToEvmAddress } from "@/utils/account-utils";
-import { validateTokenAmount, isHBARToken } from "@/utils/token-utils";
-import { HEDERA_CONFIG } from "@/config/hederaConfig";
+import { isHBARToken } from "@/utils/token-utils";
+import { VAULTS_CONFIG } from "@/config/hederaConfig";
 import { toast } from "@/hooks/use-toast";
 
 interface VaultContextType {
@@ -32,7 +32,6 @@ interface VaultContextType {
   // User data
   userShares: number;
   userTotalDeposited: number;
-  userTokenBalance: number;
 
   // Vault states and data
   vaultStates: Record<string, VaultState>;
@@ -41,14 +40,12 @@ interface VaultContextType {
   withdrawStatus: WithdrawStatus | null;
 
   // Operations
-  loadVaultData: () => Promise<void>;
-  loadUserData: () => Promise<void>;
+  loadVaultData: (userAddress: string) => Promise<void>;
+  loadUserData: (userAddress: string) => Promise<void>;
   loadTopTraders: () => Promise<void>;
-  loadTransactionHistory: () => Promise<void>;
-  deposit: (amount: number) => Promise<void>;
-  withdraw: (amount: number) => Promise<void>;
-  approveToken: (amount: number) => Promise<boolean>;
-  requestWithdraw: () => Promise<void>;
+  loadTransactionHistory: (userAddress: string) => Promise<void>;
+  deposit: (amount: number, userAddress: string) => Promise<void>;
+  approveToken: (amount: number, userAddress: string) => Promise<boolean>;
   checkWithdrawStatus: () => Promise<void>;
 
   // User-specific vault service instance
@@ -56,6 +53,9 @@ interface VaultContextType {
 
   // HashConnect integration
   setHashConnectData: (manager: any, pairingData: any) => void;
+
+  // Vault info retrieval
+  callGetVaultInfo: (vaultAddress: string) => Promise<VaultState | null>;
 }
 
 const VaultContext = createContext<VaultContextType | null>(null);
@@ -67,7 +67,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   // User data
   const [userShares, setUserShares] = useState(0);
   const [userTotalDeposited, setUserTotalDeposited] = useState(0);
-  const [userTokenBalance, setUserTokenBalance] = useState(0);
 
   // Vault states and data
   const [vaultStates, setVaultStates] = useState<Record<string, VaultState>>(
@@ -83,6 +82,9 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
   // Single vault service instance for the context
   const [vaultService, setVaultService] = useState<VaultService | null>(null);
+
+  // Ref to track if we're currently loading vault data to prevent infinite loops
+  const isLoadingVaultData = useRef(false);
 
   // Get or create vault service
   const getUserVaultService =
@@ -107,6 +109,38 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       return vaultService;
     }, [vaultService]);
 
+  // Call getVaultInfo and return vault state
+  const callGetVaultInfo = useCallback(
+    async (vaultAddress: string) => {
+      try {
+        console.log("🔍 Calling getVaultInfo for vault address:", vaultAddress);
+
+        const vaultService = await getUserVaultService();
+        if (!vaultService) {
+          console.error("Vault service not available");
+          return null;
+        }
+
+        // Set vault contract first
+        await vaultService.setVaultContract(vaultAddress);
+
+        // Call getVaultInfo
+        const vaultInfo = await vaultService.getVaultInfo(vaultAddress);
+
+        console.log("📊 Vault Info Result:", {
+          vaultAddress: vaultAddress,
+          vaultInfo: vaultInfo,
+        });
+
+        return vaultInfo;
+      } catch (error) {
+        console.error("❌ Error calling getVaultInfo:", error);
+        return null;
+      }
+    },
+    [getUserVaultService]
+  );
+
   // Set HashConnect data for vault service
   const setHashConnectData = useCallback(
     (manager: any, pairingData: any) => {
@@ -120,106 +154,148 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   // Initialize vaults
   useEffect(() => {
     const initializeVaults = async () => {
-      // Debug environment variables
-      console.log("[VaultContext] 🔧 Environment variables:", {
-        VITE_VAULT_ADDRESS: import.meta.env.VITE_VAULT_ADDRESS,
-        VITE_TOKEN_ADDRESS: import.meta.env.VITE_TOKEN_ADDRESS,
-        HEDERA_CONFIG: HEDERA_CONFIG.contracts,
-      });
-
-      // Initialize only real vault
       const vaultsList: Vault[] = [];
 
-      if (HEDERA_CONFIG.development.enableRealContract) {
-        const realVault = createRealVault();
-        vaultsList.push(realVault);
+      try {
+        // Get vault info for all configured vaults
+        const vaultInfos: Record<string, VaultState> = {};
 
-        if (HEDERA_CONFIG.development.enableLogging) {
-          console.log("[VaultContext] ✅ Real vault added:", realVault);
+        for (const vaultConfig of VAULTS_CONFIG.vaults) {
+          // Skip vaults without addresses
+          if (!vaultConfig.vaultAddress) {
+            console.log(
+              `[VaultContext] Skipping vault ${vaultConfig.name} - no address configured`
+            );
+            continue;
+          }
+
+          try {
+            const vaultInfo = await callGetVaultInfo(vaultConfig.vaultAddress);
+            if (vaultInfo) {
+              vaultInfos[vaultConfig.vaultAddress] = vaultInfo;
+              console.log(
+                `[VaultContext] ✅ Got vault info for ${vaultConfig.name}:`,
+                vaultInfo
+              );
+            } else {
+              console.log(
+                `[VaultContext] ❌ Could not get vault info for ${vaultConfig.name}`
+              );
+            }
+          } catch (error) {
+            console.log(
+              `[VaultContext] ❌ Error getting vault info for ${vaultConfig.name}:`,
+              error
+            );
+          }
         }
+
+        // Create multiple vaults from config and vault infos
+        const createdVaults = createMultipleVaults(vaultInfos);
+        vaultsList.push(...createdVaults);
+
+        console.log(
+          `[VaultContext] ✅ Initialized ${vaultsList.length} vaults`
+        );
+      } catch (error) {
+        console.log("[VaultContext] ❌ Error initializing vaults:", error);
       }
 
+      console.log("[VaultContext] Initialize vaults:", vaultsList);
       setVaults(vaultsList);
     };
 
     initializeVaults();
-  }, []);
+  }, [callGetVaultInfo]);
 
   // Load vault data from smart contract
   const loadVaultData = useCallback(
-    async (userAddress?: string) => {
+    async (userAddress: string) => {
       if (!userAddress) return;
+
+      // Prevent concurrent calls
+      if (isLoadingVaultData.current) {
+        console.log(
+          "[VaultContext] 🔄 Already loading vault data, skipping..."
+        );
+        return;
+      }
+
+      isLoadingVaultData.current = true;
+
       try {
-        // Load vault data for the first vault
-        const vault = vaults[0];
-        if (!vault) {
+        // Get current vaults state
+        const currentVaults = vaults;
+        if (currentVaults.length === 0) {
           console.log(
-            "[VaultContext] ℹ️ No vault found, skipping real-time updates"
+            "[VaultContext] ℹ️ No vaults found, skipping real-time updates"
           );
           return;
         }
 
-        console.log("[VaultContext] 📊 Loading vault data:", vault.name);
+        console.log(
+          `[VaultContext] 📊 Loading data for ${currentVaults.length} vaults`
+        );
 
         const vaultService = await getUserVaultService();
         if (!vaultService) {
           throw new Error("Vault service not available");
         }
 
-        // Set vault contract
-        await vaultService.setVaultContract(vault.vaultAddress);
+        // Update all vaults
+        const updatedVaults = await Promise.all(
+          currentVaults.map(async (vault) => {
+            try {
+              // Set vault contract
+              await vaultService.setVaultContract(vault.vaultAddress);
 
-        // Get vault state
-        const vaultState = await vaultService.getVaultInfo(vault.vaultAddress);
+              // Get vault state
+              const vaultState = await vaultService.getVaultInfo(
+                vault.vaultAddress
+              );
 
-        // Update vault states
-        setVaultStates((prev) => ({
-          ...prev,
-          [vault.vaultAddress]: vaultState,
-        }));
+              // Update vault states
+              setVaultStates((prev) => ({
+                ...prev,
+                [vault.vaultAddress]: vaultState,
+              }));
 
-        // Update vault data with timestamps and APY from getVaultInfo
-        console.log("[VaultContext] 🔍 Vault state:", vaultState.apy);
-        setVaults((prev) =>
-          prev.map((v) =>
-            v.id === vault.id
-              ? {
-                  ...v,
-                  totalShares: vaultState.totalShares,
-                  shareholderCount: vaultState.shareholderCount,
-                  depositsClosed: vaultState.depositsClosed,
-                  withdrawalsEnabled: vaultState.withdrawalsEnabled,
-                  totalDeposits: vaultState.totalBalance,
-                  runTimestamp: vaultState.runTimestamp,
-                  stopTimestamp: vaultState.stopTimestamp,
-                  apy: (vaultState as any).apy ?? v.apy,
-                }
-              : v
-          )
+              // Return updated vault
+              return {
+                ...vault,
+                totalShares: vaultState.totalShares,
+                shareholderCount: vaultState.shareholderCount,
+                depositsClosed: vaultState.depositsClosed,
+                withdrawalsEnabled: vaultState.withdrawalsEnabled,
+                totalDeposits: vaultState.totalBalance,
+                runTimestamp: vaultState.runTimestamp,
+                stopTimestamp: vaultState.stopTimestamp,
+                apy: (vaultState as any).apy ?? vault.apy,
+              };
+            } catch (error) {
+              console.error(
+                `[VaultContext] Error updating vault ${vault.name}:`,
+                error
+              );
+              return vault; // Return unchanged vault on error
+            }
+          })
         );
 
-        console.log("[VaultContext] ✅ Vault updated successfully");
-
-        // Load user token balance
-        if (vaultState.token1Address) {
-          const balanceSmallest = await vaultService.getTokenBalance(
-            vaultState.token1Address,
-            userAddress
-          );
-          const tokenDecimals = vault.token === "HBAR" ? 8 : 6;
-          const balanceInUnits = balanceSmallest / Math.pow(10, tokenDecimals);
-          setUserTokenBalance(balanceInUnits);
-        }
+        setVaults(updatedVaults);
+        console.log("[VaultContext] ✅ All vaults updated successfully");
       } catch (error) {
-        console.error("[VaultContext] Error loading real vault data:", error);
+        console.error("[VaultContext] Error loading vault data:", error);
+      } finally {
+        isLoadingVaultData.current = false;
       }
     },
-    [vaults, getUserVaultService]
+    [getUserVaultService]
   );
 
   // Load user data for selected vault
   const loadUserData = useCallback(
-    async (userAddress?: string) => {
+    async (userAddress: string) => {
       if (!selectedVault || !userAddress) return;
 
       console.log(
@@ -281,7 +357,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
   // Load transaction history
   const loadTransactionHistory = useCallback(
-    async (userAddress?: string) => {
+    async (userAddress: string) => {
       if (!selectedVault) return;
 
       try {
@@ -290,10 +366,9 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
           throw new Error("Vault service not available");
         }
 
-        // Note: getTransactionHistory method doesn't exist in the new VaultService
-        // For now, we'll use an empty array
-        const transactions: Transaction[] = [];
-        setTransactionHistory(transactions);
+        // TODO: Implement proper transaction history
+        // For now, keep an empty array
+        setTransactionHistory([]);
       } catch (error) {
         console.error(
           "[VaultContext] Error loading transaction history:",
@@ -307,7 +382,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
   // Approve token
   const approveToken = useCallback(
-    async (amount: number, userAddress?: string) => {
+    async (amount: number, userAddress: string) => {
       if (!selectedVault) {
         throw new Error("No vault selected not connected");
       }
@@ -411,7 +486,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
   // Deposit into vault
   const deposit = useCallback(
-    async (amount: number, userAddress?: string) => {
+    async (amount: number, userAddress: string) => {
       if (!selectedVault) {
         throw new Error("No vault selected not connected");
       }
@@ -420,7 +495,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       }
 
       validateVaultForDeposit(selectedVault);
-      validateTokenAmount(amount, userTokenBalance, selectedVault.token);
 
       console.log("[VaultContext] 💰 Starting deposit process...", {
         vault: selectedVault.name,
@@ -491,67 +565,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
     },
     [
       selectedVault,
-      userTokenBalance,
-      userShares,
-      userTotalDeposited,
-      loadVaultData,
-      loadUserData,
-      loadTopTraders,
-      loadTransactionHistory,
-      getUserVaultService,
-    ]
-  );
-
-  // Withdraw from vault
-  const withdraw = useCallback(
-    async (amount: number, userAddress?: string) => {
-      if (!selectedVault) {
-        throw new Error("No vault selected not connected");
-      }
-      if (!userAddress) {
-        throw new Error("No user address provided");
-      }
-
-      validateVaultForWithdraw(selectedVault);
-
-      if (amount > userShares) {
-        throw new Error("Insufficient shares for withdrawal");
-      }
-
-      try {
-        const vaultService = await getUserVaultService();
-        if (!vaultService) {
-          throw new Error("Vault service not available");
-        }
-
-        // Withdraw from vault
-        toast({
-          title: "Withdrawing",
-          description: "Please confirm withdrawal transaction in your wallet",
-        });
-
-        const withdrawTx = await vaultService.withdraw();
-        await vaultService.waitForReceipt(withdrawTx);
-
-        toast({
-          title: "Success",
-          description: `Successfully withdrawn ${amount} shares`,
-        });
-
-        // Refresh data
-        await Promise.all([
-          loadVaultData(userAddress),
-          loadUserData(userAddress),
-          loadTopTraders(),
-          loadTransactionHistory(userAddress),
-        ]);
-      } catch (error) {
-        console.error("[VaultContext] Withdraw error:", error);
-        throw error;
-      }
-    },
-    [
-      selectedVault,
       userShares,
       userTotalDeposited,
       loadVaultData,
@@ -589,84 +602,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
     [selectedVault, getUserVaultService]
   );
 
-  // Request withdraw
-  const requestWithdraw = useCallback(
-    async (userAddress?: string) => {
-      console.log("[VaultContext] 🔍 requestWithdraw called from VaultContext");
-
-      if (!selectedVault || !userAddress) {
-        toast({
-          title: "Error",
-          description: "Please select a vault and connect wallet",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        const vaultService = await getUserVaultService();
-        if (!vaultService) {
-          throw new Error("Vault service not available");
-        }
-
-        // Check withdraw status first
-        const status = await vaultService.checkWithdrawStatus(
-          selectedVault.vaultAddress
-        );
-
-        if (!status.canWithdraw) {
-          toast({
-            title: "Cannot Withdraw",
-            description: status.message,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // Execute withdraw request (using withdraw method instead of requestWithdraw)
-        const tx = await vaultService.withdraw();
-
-        // Wait for transaction confirmation
-        const receipt = await vaultService.waitForReceipt(tx);
-
-        toast({
-          title: "Withdraw Successful",
-          description: `Transaction confirmed: ${vaultService.formatHash(
-            (receipt as any).transaction_id ||
-              (receipt as any).transactionId ||
-              "unknown"
-          )}`,
-        });
-
-        // Refresh data after successful withdraw
-        await Promise.all([
-          loadVaultData(userAddress),
-          loadUserData(userAddress),
-          loadTopTraders(),
-          loadTransactionHistory(userAddress),
-        ]);
-      } catch (error) {
-        console.error("[VaultContext] Error requesting withdraw:", error);
-        toast({
-          title: "Withdraw Failed",
-          description:
-            (error as any) instanceof Error
-              ? (error as any).message
-              : "Failed to process withdraw request",
-          variant: "destructive",
-        });
-      }
-    },
-    [
-      selectedVault,
-      loadVaultData,
-      loadUserData,
-      loadTopTraders,
-      loadTransactionHistory,
-      getUserVaultService,
-    ]
-  );
-
   return (
     <VaultContext.Provider
       value={{
@@ -675,7 +610,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         setSelectedVault,
         userShares,
         userTotalDeposited,
-        userTokenBalance,
         vaultStates,
         topTraders,
         transactionHistory,
@@ -685,12 +619,11 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         loadTopTraders,
         loadTransactionHistory,
         deposit,
-        withdraw,
         approveToken,
-        requestWithdraw,
         checkWithdrawStatus,
         getUserVaultService,
         setHashConnectData,
+        callGetVaultInfo,
       }}
     >
       {children}

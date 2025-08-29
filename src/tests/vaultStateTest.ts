@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { HEDERA_CONFIG } from '@/config/hederaConfig';
+import { VAULTS_CONFIG } from '@/config/hederaConfig';
 import vaultABI from '../../Vault.json';
 
 // Test configuration
@@ -26,8 +26,8 @@ export class VaultStateTest {
   private vaultContract: ethers.Contract | null = null;
 
   constructor() {
-    this.provider = new ethers.providers.JsonRpcProvider(HEDERA_CONFIG.network.rpcUrl);
-    console.log('🔧 VaultStateTest initialized with RPC:', HEDERA_CONFIG.network.rpcUrl);
+    this.provider = new ethers.providers.JsonRpcProvider('https://mainnet.hashio.io/api');
+    console.log('🔧 VaultStateTest initialized with RPC: https://mainnet.hashio.io/api');
     console.log('📋 Using real Vault ABI with', VAULT_ABI.length, 'functions');
   }
 
@@ -251,7 +251,7 @@ export class VaultStateTest {
   }> {
     const address = vaultEvmAddress || TEST_CONFIG.vaultEvmAddress;
     console.log('🚀 Starting vault state tests...');
-    console.log('📋 Test configuration:', { vaultEvmAddress: address, rpcUrl: HEDERA_CONFIG.network.rpcUrl });
+          console.log('📋 Test configuration:', { vaultEvmAddress: address, rpcUrl: 'https://mainnet.hashio.io/api' });
     
     const results: { [key: string]: any } = {};
     let passed = 0;
@@ -334,9 +334,9 @@ export async function runVaultStateTests(): Promise<void> {
     
     console.log('🧪 Vault State Test Suite');
     console.log('=========================');
-    console.log('Network:', HEDERA_CONFIG.network.name);
-    console.log('RPC URL:', HEDERA_CONFIG.network.rpcUrl);
-    console.log('Chain ID:', HEDERA_CONFIG.network.chainId);
+          console.log('Network: Hedera Mainnet');
+      console.log('RPC URL: https://mainnet.hashio.io/api');
+      console.log('Chain ID: 295');
     console.log('ABI Source: Real Vault.json file');
     
     const results = await tester.runAllTests();

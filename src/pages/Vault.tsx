@@ -40,6 +40,7 @@ import {
   getUserAddress,
   formatUserAddress,
   getAccountBalance,
+  accountIdToEvmAddress,
 } from "@/utils/account-utils";
 import {
   formatVaultAmount,
@@ -48,7 +49,8 @@ import {
   getTimeRemaining,
   formatRelativeTime,
 } from "@/utils/vault-utils";
-import { HEDERA_CONFIG } from "@/config/hederaConfig";
+import { VAULTS_CONFIG } from "@/config/hederaConfig";
+import { checkAndApproveTokens } from "@/utils/token-utils";
 
 const Vault: React.FC = () => {
   const { user } = useAuth();
@@ -65,9 +67,9 @@ const Vault: React.FC = () => {
     loadTopTraders,
     loadTransactionHistory,
     deposit,
-    withdraw,
     checkWithdrawStatus,
     setHashConnectData,
+    callGetVaultInfo,
   } = useVault();
   const { manager, pairingData } = useHashConnect();
 
@@ -96,8 +98,8 @@ const Vault: React.FC = () => {
 
       console.log("Loading USDC balance for user:", userAddress);
 
-      // Get USDC token address from config
-      const usdcTokenAddress = HEDERA_CONFIG.contracts.tokenContractId;
+      // Get USDC token address from first vault config
+      const usdcTokenAddress = VAULTS_CONFIG.vaults[0]?.tokenAddress;
 
       // Fetch USDC balance using getAccountBalance
       const balance = await getAccountBalance(
@@ -133,7 +135,10 @@ const Vault: React.FC = () => {
       const loadData = async () => {
         setIsLoadingVaultData(true);
         try {
-          await loadVaultData();
+          const userAddress = getUserAddress(user);
+          if (userAddress) {
+            await loadVaultData(userAddress);
+          }
           await loadUserUSDCBalance();
         } finally {
           setIsLoadingVaultData(false);
@@ -150,18 +155,27 @@ const Vault: React.FC = () => {
         "🔄 Loading user data for selected vault:",
         selectedVault.name
       );
-      loadUserData();
-      loadTopTraders();
-      loadTransactionHistory();
-      checkWithdrawStatus();
+      const userAddress = getUserAddress(user);
+      if (userAddress) {
+        loadUserData(userAddress);
+        loadTopTraders();
+        loadTransactionHistory(userAddress);
+        checkWithdrawStatus();
+
+        // Also call getVaultInfo when vault is selected
+        if (selectedVault.name !== "Coming Soon...") {
+          callGetVaultInfo(selectedVault.vaultAddress);
+        }
+      }
     }
   }, [
-    selectedVault?.id,
+    selectedVault,
     user,
     loadUserData,
     loadTopTraders,
     loadTransactionHistory,
     checkWithdrawStatus,
+    callGetVaultInfo,
   ]);
 
   // Xử lý deposit - tự động approve token
@@ -175,13 +189,63 @@ const Vault: React.FC = () => {
       return;
     }
 
+    if (!selectedVault) {
+      toast({
+        title: "Error",
+        description: "No vault selected",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // Tự động approve token trước khi deposit
-      console.log("🔐 Auto-approving token before deposit...");
+      const userAddress = getUserAddress(user);
+      if (!userAddress) {
+        throw new Error("No user address available");
+      }
 
-      // Gọi deposit function (sẽ tự động approve nếu cần)
-      await deposit(parseFloat(depositAmount));
+      // Convert user address to EVM address for token approval
+      const userEvmAddress = await accountIdToEvmAddress(userAddress);
+
+      console.log("🔐 Checking and approving tokens before deposit...");
+      console.log("User EVM address:", userEvmAddress);
+      console.log("Vault address:", selectedVault.vaultAddress);
+      console.log("Token address:", selectedVault.tokenAddress);
+
+      // Check and approve tokens for the vault
+      const approvalResult = await checkAndApproveTokens(
+        manager,
+        pairingData,
+        selectedVault.tokenAddress,
+        userEvmAddress,
+        selectedVault.vaultAddress,
+        depositAmount,
+        6 // USDC decimals
+      );
+
+      if (!approvalResult.success) {
+        throw new Error(`Token approval failed: ${approvalResult.error}`);
+      }
+
+      console.log(
+        "✅ Token approval successful:",
+        approvalResult.transactionHash
+      );
+
+      // Show approval success toast
+      if (
+        approvalResult.data?.message !== "Sufficient allowance already exists"
+      ) {
+        toast({
+          title: "Token Approved",
+          description:
+            "Tokens approved successfully. Proceeding with deposit...",
+        });
+      }
+
+      // Gọi deposit function
+      await deposit(parseFloat(depositAmount), userAddress);
 
       setDepositAmount("");
       setShowDepositForm(false);
@@ -267,7 +331,12 @@ const Vault: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => loadVaultData()}
+            onClick={() => {
+              const userAddress = getUserAddress(user);
+              if (userAddress) {
+                loadVaultData(userAddress);
+              }
+            }}
             disabled={isLoadingVaultData}
             className="flex items-center gap-2"
           >
@@ -275,6 +344,19 @@ const Vault: React.FC = () => {
               className={`h-4 w-4 ${isLoadingVaultData ? "animate-spin" : ""}`}
             />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (selectedVault && selectedVault.name !== "Coming Soon...") {
+                callGetVaultInfo(selectedVault.vaultAddress);
+              }
+            }}
+            className="flex items-center gap-2"
+          >
+            <Shield className="h-4 w-4" />
+            Get Vault Info
           </Button>
         </div>
       </div>

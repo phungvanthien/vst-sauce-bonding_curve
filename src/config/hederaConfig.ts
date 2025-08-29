@@ -1,48 +1,61 @@
-// Hedera Configuration
-export const HEDERA_CONFIG = {
-  // Network Configuration
-  network: {
-    name: 'Hedera Mainnet', // hoặc 'Hedera Mainnet'
-    chainId: 295, // Testnet: 296, Mainnet: 295
-    mirrorNode: 'https://mainnet-public.mirrornode.hedera.com', // Mainnet Mirror Node
-    // Hedera JSON-RPC Relay (Hashio). For Testnet use: https://testnet.hashio.io/api
-    rpcUrl: 'https://mainnet.hashio.io/api'
-  },
-
-  // Smart Contract Addresses (Hedera Contract IDs)
-  contracts: {
-    // Read from .env file - support both formats
-    vaultContractId: (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.VITE_VAULT_ADDRESS || (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.VAULT_ADDRESS || '0.0.9589598', // Vault contract ID
-    tokenContractId: (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.VITE_TOKEN_ADDRESS || (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.TOKEN_ADDRESS || '0.0.456858', // Real USDC token on Hedera Mainnet
-  },
-
-  // Vault Information
-  vaultInfo: {
-    name: "Vistia Real Vault",
-    description: "Real vault connected to Hedera smart contract",
-    token: "USDC",
-    tokenDecimals: 6,
-    apy: 15.0,
-    riskLevel: "Medium",
-    maxShareholders: 50, 
-  },
-
-  // Development Settings
-  development: {
-    enableRealContract: true, // Bật để sử dụng smart contract thực
-    enableLogging: true,
-    autoRefreshInterval: 30000, // 30 seconds
-  }
+// Vaults Configuration
+export const VAULTS_CONFIG = {
+  vaults: [
+    {
+      id: 1,
+      name: "Vistia Growth Vault",
+      description: "High-growth investment strategy with moderate risk",
+      token: "USDC",
+      tokenAddress: "0x000000000000000000000000000000000006f89a", // USDC token
+      vaultAddress: "0xEA316d96F85e662aa7e213A900A87dbDDfCbE99a",
+      apy: 15.0,
+      riskLevel: "Medium",
+      maxShareholders: 50,
+    },
+    {
+      id: 2,
+      name: "Vistia Conservative Vault", 
+      description: "Low-risk stable investment strategy",
+      token: "USDC",
+      tokenAddress: "0.0.456858", // USDC token
+      vaultAddress: "",
+      apy: 8.5,
+      riskLevel: "Low",
+      maxShareholders: 100,
+    },
+    {
+      id: 3,
+      name: "Vistia Aggressive Vault",
+      description: "High-risk, high-reward investment strategy",
+      token: "USDC",
+      tokenAddress: "0.0.456858", // USDC token
+      vaultAddress: "",
+      apy: 22.0,
+      riskLevel: "High",
+      maxShareholders: 30,
+    },
+    {
+      id: 4,
+      name: "Vistia Balanced Vault",
+      description: "Balanced risk-reward investment strategy",
+      token: "USDC",
+      tokenAddress: "0.0.456858", // USDC token
+      vaultAddress: "",
+      apy: 12.5,
+      riskLevel: "Medium",
+      maxShareholders: 75,
+    },
+  ]
 };
 
-// Helper function để lấy config
-export const getHederaConfig = () => {
-  return HEDERA_CONFIG;
+// Helper function to get config
+export const getVaultsConfig = () => {
+  return VAULTS_CONFIG;
 };
 
-// Helper function để update config
-export const updateHederaConfig = (updates: Partial<typeof HEDERA_CONFIG>) => {
-  Object.assign(HEDERA_CONFIG, updates);
+// Helper function to update config
+export const updateVaultsConfig = (updates: Partial<typeof VAULTS_CONFIG>) => {
+  Object.assign(VAULTS_CONFIG, updates);
 };
 
 // Contract function signatures
