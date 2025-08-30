@@ -1,5 +1,6 @@
 import { TraderInfo, Transaction, WithdrawStatus, VaultState } from '@/services/vaultService';
 import { VAULTS_CONFIG } from '@/config/hederaConfig';
+import { getTokenSymbolFromAddress } from '@/config/tokenAddress';
 
 export interface Vault {
   id: number;
@@ -28,12 +29,15 @@ export function initializeVaults(): Vault[] {
 
 // Create vault configuration for a single vault
 export function createVault(vaultConfig: any, vaultInfo: VaultState): Vault {
+  // Get token symbol from token1Address in vault info
+  const tokenSymbol = getTokenSymbolFromAddress(vaultInfo.token1Address);
+  
   return {
     id: vaultConfig.id,
     name: vaultConfig.name,
     description: vaultConfig.description,
-    token: vaultConfig.token,
-    tokenAddress: vaultConfig.tokenAddress,
+    token: tokenSymbol, // Use dynamic token symbol from vault info
+    tokenAddress: vaultInfo.token1Address, // Use token1Address from vault info
     vaultAddress: vaultConfig.vaultAddress,
     totalDeposits: vaultInfo.totalBalance,
     totalShares: vaultInfo.totalShares,

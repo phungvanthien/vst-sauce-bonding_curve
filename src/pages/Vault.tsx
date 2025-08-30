@@ -50,7 +50,7 @@ import {
   formatRelativeTime,
 } from "@/utils/vault-utils";
 import { VAULTS_CONFIG } from "@/config/hederaConfig";
-import { checkAndApproveTokens } from "@/utils/token-utils";
+import { checkAndApproveTokens, getTokenDecimal } from "@/utils/token-utils";
 
 const Vault: React.FC = () => {
   const { user } = useAuth();
@@ -76,49 +76,63 @@ const Vault: React.FC = () => {
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [showDepositForm, setShowDepositForm] = useState(false);
-  const [userUSDCBalance, setUserUSDCBalance] = useState(0);
-  const [isLoadingUSDCBalance, setIsLoadingUSDCBalance] = useState(false);
+  const [userTokenBalance, setUserTokenBalance] = useState(0);
+  const [isLoadingTokenBalance, setIsLoadingTokenBalance] = useState(false);
 
   // Loading states moved from VaultContext
   const [isLoading, setIsLoading] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isLoadingVaultData, setIsLoadingVaultData] = useState(false);
 
-  // Load USDC balance from account
-  const loadUserUSDCBalance = useCallback(async () => {
+  // Load token balance from account
+  const loadUserTokenBalance = useCallback(async () => {
     if (!user) return;
 
-    setIsLoadingUSDCBalance(true);
+    setIsLoadingTokenBalance(true);
     try {
       const userAddress = getUserAddress(user);
       if (!userAddress) {
-        console.log("No user address available for USDC balance");
+        console.log("No user address available for token balance");
         return;
       }
 
-      console.log("Loading USDC balance for user:", userAddress);
+      console.log("Loading token balance for user:", userAddress);
 
-      // Get USDC token address from first vault config
-      const usdcTokenAddress = VAULTS_CONFIG.vaults[0]?.tokenAddress;
+      // Get token address from selected vault or first available vault
+      let tokenAddress = "";
+      if (selectedVault && selectedVault.tokenAddress) {
+        tokenAddress = selectedVault.tokenAddress;
+      } else if (vaults.length > 0 && vaults[0].tokenAddress) {
+        tokenAddress = vaults[0].tokenAddress;
+      } else {
+        console.log("No token address available for balance check");
+        return;
+      }
 
-      // Fetch USDC balance using getAccountBalance
+      // Fetch token balance using getAccountBalance
       const balance = await getAccountBalance(
         userAddress as `0.0.${string}`,
-        usdcTokenAddress as `0.0.${string}`
+        tokenAddress as `0.0.${string}`
       );
 
-      // Convert from smallest units to human readable (USDC has 6 decimals)
-      const balanceInUnits = Number(balance) / Math.pow(10, 6);
+      // Get token decimals dynamically
+      const tokenDecimals = await getTokenDecimal(
+        tokenAddress as `0x${string}`
+      );
+      console.log(`Token decimals for ${tokenAddress}: ${tokenDecimals}`);
 
-      setUserUSDCBalance(balanceInUnits);
-      console.log("USDC balance loaded:", balanceInUnits);
+      // Convert from smallest units to human readable using dynamic decimals
+      const balanceInUnits = Number(balance) / Math.pow(10, tokenDecimals);
+
+      setUserTokenBalance(balanceInUnits);
+      console.log("Token balance loaded:", balanceInUnits);
     } catch (error) {
-      console.error("Error loading USDC balance:", error);
-      setUserUSDCBalance(0);
+      console.error("Error loading token balance:", error);
+      setUserTokenBalance(0);
     } finally {
-      setIsLoadingUSDCBalance(false);
+      setIsLoadingTokenBalance(false);
     }
-  }, [user]);
+  }, [user, selectedVault, vaults]);
 
   // Set HashConnect data when available
   useEffect(() => {
@@ -139,14 +153,14 @@ const Vault: React.FC = () => {
           if (userAddress) {
             await loadVaultData(userAddress);
           }
-          await loadUserUSDCBalance();
+          await loadUserTokenBalance();
         } finally {
           setIsLoadingVaultData(false);
         }
       };
       loadData();
     }
-  }, [user, vaults.length, loadVaultData, loadUserUSDCBalance]);
+  }, [user, vaults.length, loadVaultData, loadUserTokenBalance]);
 
   // Load user data when selected vault changes
   useEffect(() => {
@@ -161,6 +175,7 @@ const Vault: React.FC = () => {
         loadTopTraders();
         loadTransactionHistory(userAddress);
         checkWithdrawStatus();
+        loadUserTokenBalance(); // Reload balance when vault changes
 
         // Also call getVaultInfo when vault is selected
         if (selectedVault.name !== "Coming Soon...") {
@@ -176,6 +191,7 @@ const Vault: React.FC = () => {
     loadTransactionHistory,
     checkWithdrawStatus,
     callGetVaultInfo,
+    loadUserTokenBalance,
   ]);
 
   // Xử lý deposit - tự động approve token
@@ -213,6 +229,11 @@ const Vault: React.FC = () => {
       console.log("Vault address:", selectedVault.vaultAddress);
       console.log("Token address:", selectedVault.tokenAddress);
 
+      // Get token decimals for approval
+      const tokenDecimals = await getTokenDecimal(
+        selectedVault.tokenAddress as `0x${string}`
+      );
+
       // Check and approve tokens for the vault
       const approvalResult = await checkAndApproveTokens(
         manager,
@@ -221,7 +242,7 @@ const Vault: React.FC = () => {
         userEvmAddress,
         selectedVault.vaultAddress,
         depositAmount,
-        6 // USDC decimals
+        tokenDecimals
       );
 
       if (!approvalResult.success) {
@@ -367,27 +388,30 @@ const Vault: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium">Your USDC Balance</h3>
+                <h3 className="font-medium">
+                  Your {selectedVault?.token || vaults[0]?.token || "USDC"}{" "}
+                  Balance
+                </h3>
                 <p className="text-sm text-cyrus-textSecondary">
                   Available for vault deposits
                 </p>
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold">
-                  {isLoadingUSDCBalance ? (
+                  {isLoadingTokenBalance ? (
                     <div className="flex items-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyrus-accent"></div>
                       Loading...
                     </div>
                   ) : (
-                    userUSDCBalance.toFixed(2)
+                    userTokenBalance.toFixed(2)
                   )}{" "}
-                  USDC
+                  {selectedVault?.token || vaults[0]?.token || "USDC"}
                 </div>
                 {/* <div className="text-sm text-cyrus-textSecondary">USDC</div> */}
-                {!isLoadingUSDCBalance && (
+                {!isLoadingTokenBalance && (
                   <div className="text-xs text-gray-500 mt-1">
-                    Raw: {userUSDCBalance}
+                    Raw: {userTokenBalance}
                   </div>
                 )}
               </div>
@@ -851,13 +875,13 @@ const Vault: React.FC = () => {
                       {selectedVault.withdrawalsEnabled && (
                         <div className="space-y-2">
                           <Label htmlFor="withdraw-amount">
-                            Withdraw (USDC)
+                            Withdraw ({selectedVault.token})
                           </Label>
                           <div className="flex gap-2">
                             <Input
                               id="withdraw-amount"
                               type="number"
-                              placeholder="Enter USDC amount"
+                              placeholder={`Enter ${selectedVault.token} amount`}
                               value={withdrawAmount}
                               onChange={(e) =>
                                 setWithdrawAmount(e.target.value)

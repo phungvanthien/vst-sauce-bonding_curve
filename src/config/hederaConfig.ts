@@ -5,8 +5,8 @@ export const VAULTS_CONFIG = {
       id: 1,
       name: "Vistia Growth Vault",
       description: "High-growth investment strategy with moderate risk",
-      token: "USDC",
-      tokenAddress: "0x000000000000000000000000000000000006f89a", // USDC token
+      token: "USDC", // Default token symbol (will be overridden by vault info)
+      tokenAddress: "", // Will be dynamically set from vault info
       vaultAddress: "0xEA316d96F85e662aa7e213A900A87dbDDfCbE99a",
       apy: 15.0,
       riskLevel: "Medium",
@@ -16,8 +16,8 @@ export const VAULTS_CONFIG = {
       id: 2,
       name: "Vistia Conservative Vault", 
       description: "Low-risk stable investment strategy",
-      token: "USDC",
-      tokenAddress: "0.0.456858", // USDC token
+      token: "USDC", // Default token symbol (will be overridden by vault info)
+      tokenAddress: "", // Will be dynamically set from vault info
       vaultAddress: "",
       apy: 8.5,
       riskLevel: "Low",
@@ -27,8 +27,8 @@ export const VAULTS_CONFIG = {
       id: 3,
       name: "Vistia Aggressive Vault",
       description: "High-risk, high-reward investment strategy",
-      token: "USDC",
-      tokenAddress: "0.0.456858", // USDC token
+      token: "USDC", // Default token symbol (will be overridden by vault info)
+      tokenAddress: "", // Will be dynamically set from vault info
       vaultAddress: "",
       apy: 22.0,
       riskLevel: "High",
@@ -38,8 +38,8 @@ export const VAULTS_CONFIG = {
       id: 4,
       name: "Vistia Balanced Vault",
       description: "Balanced risk-reward investment strategy",
-      token: "USDC",
-      tokenAddress: "0.0.456858", // USDC token
+      token: "USDC", // Default token symbol (will be overridden by vault info)
+      tokenAddress: "", // Will be dynamically set from vault info
       vaultAddress: "",
       apy: 12.5,
       riskLevel: "Medium",
