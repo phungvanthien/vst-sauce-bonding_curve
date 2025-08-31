@@ -60,7 +60,6 @@ export function createMultipleVaults(vaultInfos: Record<string, VaultState>): Va
   for (const vaultConfig of VAULTS_CONFIG.vaults) {
     // Skip vaults without addresses
     if (!vaultConfig.vaultAddress) {
-      console.log(`[vault-utils] Skipping vault ${vaultConfig.name} - no address configured`);
       continue;
     }
     
@@ -68,9 +67,6 @@ export function createMultipleVaults(vaultInfos: Record<string, VaultState>): Va
     if (vaultInfo) {
       const vault = createVault(vaultConfig, vaultInfo);
       vaults.push(vault);
-      console.log(`[vault-utils] Created vault: ${vault.name} (${vault.vaultAddress})`);
-    } else {
-      console.log(`[vault-utils] No vault info found for ${vaultConfig.name} (${vaultConfig.vaultAddress})`);
     }
   }
   

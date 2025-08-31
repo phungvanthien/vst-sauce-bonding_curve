@@ -15,10 +15,8 @@ async function main() {
   
   if (contractIndex !== -1 && args[contractIndex + 1]) {
     const evmAddress = args[contractIndex + 1];
-    console.log(`🎯 Testing specific vault: ${evmAddress}`);
     await testSpecificVault(evmAddress);
   } else {
-    console.log('🧪 Running all vault state tests...');
     await runVaultStateTests();
   }
 }

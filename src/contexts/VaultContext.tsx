@@ -98,7 +98,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         // Initialize vault contract asynchronously
         try {
           await newService.initializeVaultContract();
-          console.log("✅ VaultService initialized successfully");
         } catch (error) {
           console.error("❌ Error initializing VaultService:", error);
         }
@@ -113,8 +112,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   const callGetVaultInfo = useCallback(
     async (vaultAddress: string) => {
       try {
-        console.log("🔍 Calling getVaultInfo for vault address:", vaultAddress);
-
         const vaultService = await getUserVaultService();
         if (!vaultService) {
           console.error("Vault service not available");
@@ -126,11 +123,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
         // Call getVaultInfo
         const vaultInfo = await vaultService.getVaultInfo(vaultAddress);
-
-        console.log("📊 Vault Info Result:", {
-          vaultAddress: vaultAddress,
-          vaultInfo: vaultInfo,
-        });
 
         return vaultInfo;
       } catch (error) {
@@ -163,9 +155,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         for (const vaultConfig of VAULTS_CONFIG.vaults) {
           // Skip vaults without addresses
           if (!vaultConfig.vaultAddress) {
-            console.log(
-              `[VaultContext] Skipping vault ${vaultConfig.name} - no address configured`
-            );
             continue;
           }
 
@@ -173,14 +162,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
             const vaultInfo = await callGetVaultInfo(vaultConfig.vaultAddress);
             if (vaultInfo) {
               vaultInfos[vaultConfig.vaultAddress] = vaultInfo;
-              console.log(
-                `[VaultContext] ✅ Got vault info for ${vaultConfig.name}:`,
-                vaultInfo
-              );
-            } else {
-              console.log(
-                `[VaultContext] ❌ Could not get vault info for ${vaultConfig.name}`
-              );
             }
           } catch (error) {
             console.log(
@@ -193,15 +174,10 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         // Create multiple vaults from config and vault infos
         const createdVaults = createMultipleVaults(vaultInfos);
         vaultsList.push(...createdVaults);
-
-        console.log(
-          `[VaultContext] ✅ Initialized ${vaultsList.length} vaults`
-        );
       } catch (error) {
         console.log("[VaultContext] ❌ Error initializing vaults:", error);
       }
 
-      console.log("[VaultContext] Initialize vaults:", vaultsList);
       setVaults(vaultsList);
     };
 
@@ -215,9 +191,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
       // Prevent concurrent calls
       if (isLoadingVaultData.current) {
-        console.log(
-          "[VaultContext] 🔄 Already loading vault data, skipping..."
-        );
         return;
       }
 
@@ -227,15 +200,8 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         // Get current vaults state
         const currentVaults = vaults;
         if (currentVaults.length === 0) {
-          console.log(
-            "[VaultContext] ℹ️ No vaults found, skipping real-time updates"
-          );
           return;
         }
-
-        console.log(
-          `[VaultContext] 📊 Loading data for ${currentVaults.length} vaults`
-        );
 
         const vaultService = await getUserVaultService();
         if (!vaultService) {
@@ -283,7 +249,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         );
 
         setVaults(updatedVaults);
-        console.log("[VaultContext] ✅ All vaults updated successfully");
       } catch (error) {
         console.error("[VaultContext] Error loading vault data:", error);
       } finally {
@@ -297,11 +262,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   const loadUserData = useCallback(
     async (userAddress: string) => {
       if (!selectedVault || !userAddress) return;
-
-      console.log(
-        "[VaultContext] 👤 Loading user data for vault:",
-        selectedVault.name
-      );
 
       try {
         const vaultService = await getUserVaultService();
@@ -320,11 +280,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
         setUserShares(shares);
         setUserTotalDeposited(totalDeposited);
-
-        console.log("[VaultContext] ✅ Real user data loaded:", {
-          shares,
-          totalDeposited,
-        });
       } catch (error) {
         console.error("[VaultContext] ❌ Error loading real user data:", error);
         setUserShares(0);
@@ -392,18 +347,12 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
       // Check if vault uses HBAR (no approval needed)
       if (isHBARToken(selectedVault.token)) {
-        console.log("[VaultContext] ℹ️ HBAR vault - no approval needed");
         toast({
           title: "No Approval Needed",
           description: "HBAR deposits don't require token approval",
         });
         return true;
       }
-
-      console.log("[VaultContext] 🔐 Starting token approval...", {
-        vault: selectedVault.name,
-        amount,
-      });
 
       try {
         const vaultService = await getUserVaultService();
@@ -412,27 +361,12 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         }
 
         // Set vault contract
-        console.log("[VaultContext] 🔧 Setting vault contract for approval...");
         await vaultService.setVaultContract(selectedVault.vaultAddress);
-
-        console.log(
-          "[VaultContext] 👤 User address for approval:",
-          userAddress
-        );
 
         // Get token1Address from vault state
         const vaultState = vaultStates[selectedVault.vaultAddress];
         const token1Address =
           vaultState?.token1Address || selectedVault.tokenAddress;
-
-        console.log(
-          "[VaultContext] 🔐 Approving tokens with dynamic token1Address...",
-          {
-            token1Address: token1Address,
-            configTokenAddress: selectedVault.tokenAddress,
-            vaultAddress: selectedVault.vaultAddress,
-          }
-        );
 
         toast({
           title: "Approving tokens",
@@ -446,18 +380,12 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
           amount
         );
 
-        console.log(
-          "[VaultContext] ✅ Approve transaction sent:",
-          approveTx.transactionId
-        );
-
         toast({
           title: "Waiting for approval",
           description: "Please wait for approval transaction to complete...",
         });
 
         const receipt = await vaultService.waitForReceipt(approveTx);
-        console.log("[VaultContext] ✅ Approve receipt:", receipt);
 
         toast({
           title: "Approval successful",
@@ -470,7 +398,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
         // If it's a connection error, show helpful message
         if ((error as any).message?.includes("HashConnect not connected")) {
-          console.log("[VaultContext] 🔄 Connection error detected...");
           toast({
             title: "Connection Error",
             description: "Please connect your HashPack wallet first.",
@@ -496,11 +423,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
 
       validateVaultForDeposit(selectedVault);
 
-      console.log("[VaultContext] 💰 Starting deposit process...", {
-        vault: selectedVault.name,
-        amount,
-      });
-
       try {
         const vaultService = await getUserVaultService();
         if (!vaultService) {
@@ -508,42 +430,20 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         }
 
         // Set vault contract
-        console.log("[VaultContext] 🔧 Setting vault contract for deposit...");
         await vaultService.setVaultContract(selectedVault.vaultAddress);
 
         // Execute deposit via HashConnect
-        console.log(
-          "[VaultContext] 🔗 Starting HashConnect deposit process..."
-        );
         toast({
           title: "Processing deposit",
           description: "Please confirm transactions in HashPack wallet",
         });
 
         const depositResult = await vaultService.deposit(amount);
-        console.log(
-          "[VaultContext] ✅ HashConnect deposit completed:",
-          depositResult
-        );
 
         if (depositResult) {
-          console.log(
-            "[VaultContext] ✅ HashConnect deposit completed successfully"
-          );
-
           const transactionId =
             (depositResult as any)?.transactionId ||
             (depositResult as any)?.transaction_id;
-          if (transactionId) {
-            console.log(
-              "[VaultContext] 🔎 Deposit transaction ID:",
-              transactionId
-            );
-          }
-        } else {
-          console.log(
-            "[VaultContext] ℹ️ Transaction submitted via HashConnect, assuming success"
-          );
         }
 
         toast({

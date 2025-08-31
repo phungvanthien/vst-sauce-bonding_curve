@@ -65,7 +65,7 @@ export async function accountIdToEvmAddress(accountId: string): Promise<`0x${str
   } catch (error) {
     console.warn('[accountIdToEvmAddress] Mirror lookup failed, falling back to SDK conversion:', error);
   }
-  console.log('[accountIdToEvmAddress] Mirror lookup failed, fall back triggered');
+
   const account = AccountId.fromString(accountId);
   const fallback = `0x${account.toEvmAddress()}` as `0x${string}`;
   

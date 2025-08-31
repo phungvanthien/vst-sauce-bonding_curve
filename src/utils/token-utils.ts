@@ -37,7 +37,6 @@ function loadCache(): TokenDecimalCache {
             const cached = window.localStorage.getItem(CACHE_STORAGE_KEY)
             if (cached) {
                 memoryCache = JSON.parse(cached)
-                console.log('[token-utils] Cache loaded from localStorage:', Object.keys(memoryCache || {}).length, 'entries')
                 return memoryCache || {}
             }
         }
@@ -57,7 +56,6 @@ function saveCache(cache: TokenDecimalCache): void {
     try {
         if (typeof window !== 'undefined' && window.localStorage) {
             window.localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(cache))
-            console.log('[token-utils] Cache saved to localStorage:', Object.keys(cache).length, 'entries')
         }
     } catch (error) {
         console.warn('[token-utils] Failed to save cache to localStorage:', error)
@@ -96,11 +94,8 @@ export async function getTokenDecimal(tokenAddressOrId: Address | Id) {
     // Check cache first
     const cachedDecimal = getCachedDecimal(tokenAddressOrIdString)
     if (cachedDecimal !== null) {
-        console.log('[token-utils] Cache hit for:', tokenAddressOrIdString, 'decimal:', cachedDecimal)
         return cachedDecimal
     }
-
-    console.log('[token-utils] Cache miss for:', tokenAddressOrIdString, '- fetching from API')
     
     let tokenIdString: string
     if (tokenAddressOrIdString.startsWith('0x')) {
@@ -109,8 +104,6 @@ export async function getTokenDecimal(tokenAddressOrId: Address | Id) {
     } else {
         tokenIdString = tokenAddressOrIdString as Id
     }
-    
-    console.log('[token-utils] tokenIdString:', tokenIdString)
     
     try {
         const res = await fetch(`${import.meta.env.VITE_MIRROR_NODE_URL}/tokens/${tokenIdString}`)
@@ -132,10 +125,7 @@ export async function getTokenDecimal(tokenAddressOrId: Address | Id) {
         if (tokenIdString !== tokenAddressOrIdString) {
             setCachedDecimal(tokenIdString, decimal)
         }
-        
-        console.log('[token-utils] Cached decimal for:', tokenAddressOrIdString, 'decimal:', decimal)
         return decimal
-        
     } catch (error) {
         console.error('[token-utils] Error fetching token decimal:', error)
         throw error
@@ -193,7 +183,6 @@ export function clearTokenDecimalCache(): void {
     try {
         if (typeof window !== 'undefined' && window.localStorage) {
             window.localStorage.removeItem(CACHE_STORAGE_KEY)
-            console.log('[token-utils] Cache cleared from localStorage')
         }
     } catch (error) {
         console.warn('[token-utils] Failed to clear cache:', error)
@@ -297,13 +286,6 @@ export async function checkTokenAllowance(
   requiredAmount?: bigint
 ): Promise<TokenAllowanceResponse> {
   try {
-    console.log('[token-utils] Checking token allowance:', {
-      tokenAddress,
-      ownerAddress,
-      spenderAddress,
-      requiredAmount: requiredAmount?.toString()
-    });
-
     const provider = getHederaProvider();
     
     // ERC20 allowance function ABI
@@ -317,12 +299,6 @@ export async function checkTokenAllowance(
     const allowanceBigInt = BigInt(allowance.toString());
     const requiredAmountBigInt = requiredAmount || BigInt(0);
     const isSufficient = allowanceBigInt >= requiredAmountBigInt;
-
-    console.log('[token-utils] Allowance check result:', {
-      allowance: allowanceBigInt.toString(),
-      requiredAmount: requiredAmountBigInt.toString(),
-      isSufficient
-    });
 
     return {
       allowance: allowanceBigInt,
@@ -354,13 +330,6 @@ export async function approveTokens(
   decimals?: number
 ): Promise<TokenApprovalResponse> {
   try {
-    console.log('[token-utils] Approving tokens:', {
-      tokenAddress,
-      spenderAddress,
-      amount: amount.toString(),
-      decimals
-    });
-
     // Get token decimals if not provided
     let tokenDecimals = decimals;
     if (tokenDecimals === undefined) {
@@ -377,8 +346,6 @@ export async function approveTokens(
       amountWei = amount;
     }
 
-    console.log('[token-utils] Amount in smallest units:', amountWei.toString());
-
     // Get signer
     const signer = getSigner(manager, pairingData);
 
@@ -394,8 +361,6 @@ export async function approveTokens(
     // Freeze and execute
     await transaction.freezeWithSigner(signer);
     const result = await manager.sendTransaction(pairingData.accountIds[0], transaction);
-
-    console.log('[token-utils] Approval transaction sent:', result.transactionId?.toString());
 
     return {
       success: true,
@@ -432,12 +397,6 @@ export async function checkAndApproveTokens(
   decimals?: number
 ): Promise<TokenApprovalResponse> {
   try {
-    console.log('[token-utils] Checking and approving tokens:', {
-      tokenAddress,
-      ownerAddress,
-      spenderAddress,
-      requiredAmount: requiredAmount.toString()
-    });
 
     // Convert required amount to bigint for comparison
     let requiredAmountBigInt: bigint;
@@ -460,16 +419,11 @@ export async function checkAndApproveTokens(
 
     // If allowance is sufficient, no approval needed
     if (allowanceResult.isSufficient) {
-      console.log('[token-utils] Sufficient allowance already exists, no approval needed');
       return {
         success: true,
         data: { message: 'Sufficient allowance already exists' }
       };
     }
-
-    console.log('[token-utils] Insufficient allowance, proceeding with approval');
-    console.log('[token-utils] Current allowance:', allowanceResult.allowance.toString());
-    console.log('[token-utils] Required amount:', requiredAmountBigInt.toString());
 
     // Approve the required amount
     const approvalResult = await approveTokens(
@@ -481,11 +435,7 @@ export async function checkAndApproveTokens(
       decimals
     );
 
-    if (approvalResult.success) {
-      console.log('[token-utils] Token approval successful');
-    } else {
-      console.error('[token-utils] Token approval failed:', approvalResult.error);
-    }
+
 
     return approvalResult;
   } catch (error) {
@@ -514,7 +464,7 @@ export async function waitForTransactionConfirmation(
     throw new Error('VITE_MIRROR_NODE_URL is not set');
   }
 
-  console.log('[token-utils] Waiting for transaction confirmation:', transactionHash);
+
 
   while (Date.now() - startTime < timeoutMs) {
     try {
@@ -527,7 +477,6 @@ export async function waitForTransactionConfirmation(
         const status = entries[0]?.result;
         
         if (status === 'SUCCESS') {
-          console.log('[token-utils] Transaction confirmed successfully');
           return;
         }
         

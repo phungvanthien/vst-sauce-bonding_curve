@@ -34,11 +34,8 @@ export function HashPackConnect() {
    * Opens HashPack pairing modal for user to connect
    */
   const handleConnect = async () => {
-    console.log("🔍 HashPackConnect: handleConnect called");
     try {
-      console.log("🔍 HashPackConnect: calling connect()");
       await connect();
-      console.log("🔍 HashPackConnect: connect() completed");
     } catch (error) {
       console.error("❌ HashPackConnect: Failed to connect:", error);
       toast({
@@ -55,7 +52,7 @@ export function HashPackConnect() {
   const handleLogin = async () => {
     if (pairingData && pairingData.accountIds[0]) {
       try {
-        await login(pairingData.accountIds[0], 'hashpack');
+        await login(pairingData.accountIds[0], "hashpack");
       } catch (error) {
         console.error("Login failed:", error);
         toast({
@@ -162,4 +159,4 @@ export function HashPackConnect() {
       Connect HashPack
     </Button>
   );
-} 
+}

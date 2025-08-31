@@ -121,8 +121,6 @@ const Dashboard = () => {
       setIsLoading(true);
       setError(null);
 
-      console.log("🔍 Đang lấy dữ liệu mới từ API...");
-
       const url = new URL(
         "https://api.vistia.co/api/v2_2/al-trade/validate/indicators"
       );
@@ -137,7 +135,6 @@ const Dashboard = () => {
       }
 
       const apiData: ApiIndicatorData[] = await response.json();
-      console.log("📊 Dữ liệu API mới:", apiData);
 
       if (!Array.isArray(apiData) || apiData.length === 0) {
         throw new Error("Dữ liệu API không hợp lệ hoặc rỗng");
@@ -207,14 +204,6 @@ const Dashboard = () => {
 
       setMetrics(processedMetrics);
       isInitialLoad.current = false;
-
-      console.log("✅ Dữ liệu đã xử lý thành công:", {
-        metrics: processedMetrics,
-        scores: newScores,
-        totalTASignals: totalTASignals,
-        accurateSignals: accurateSignals,
-        accuracyRate: accuracyRate,
-      });
     } catch (err) {
       console.error("💥 Lỗi API:", err);
       setError(err instanceof Error ? err.message : "Không thể lấy dữ liệu");

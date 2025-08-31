@@ -213,8 +213,6 @@ const History = () => {
       // Clear existing data first to avoid confusion
       setTradeHistory([]);
 
-      console.log("🔍 Fetching trade history from API...");
-
       // Use the exact API endpoint as provided
       const response = await fetch(
         "https://api.vistia.co/api/v2_2/al-trade/validate/symbols?timeframe=1h&num_sessions=1000&tp_strat=sess4&detail=true"
@@ -225,7 +223,6 @@ const History = () => {
       }
 
       const apiData: ApiSymbolData[] = await response.json();
-      console.log(" API Response received:", apiData.length, "items");
 
       if (!Array.isArray(apiData) || apiData.length === 0) {
         throw new Error("API returned empty or invalid data");
@@ -242,8 +239,6 @@ const History = () => {
         },
         []
       );
-
-      console.log("✅ Unique pairs after deduplication:", uniqueData.length);
 
       // Transform API data to trade history format
       const processedTrades: TradeData[] = uniqueData
@@ -285,26 +280,6 @@ const History = () => {
           const profitLossPercentage = item.roi || 0;
           const direction = profitLoss >= 0 ? "long" : "short";
 
-          // Log calculation for first item only for verification
-          if (index === 0) {
-            console.log(`\n FIRST ITEM CALCULATION - ${token}:`);
-            if (rsi14Indicator) {
-              console.log(
-                `RSI14: ${rsi14Indicator.win_rate}/100 * ${rsi14Indicator.num_order} = ${rsi14Value}`
-              );
-            }
-            if (adxIndicator) {
-              console.log(
-                `ADX: ${adxIndicator.win_rate}/100 * ${adxIndicator.num_order} = ${adxValue}`
-              );
-            }
-            if (rsi7Indicator) {
-              console.log(
-                `RSI7: ${rsi7Indicator.win_rate}/100 * ${rsi7Indicator.num_order} = ${rsi7Value}`
-              );
-            }
-          }
-
           return {
             id: `trade-${index + 1}`,
             token: token,
@@ -334,9 +309,6 @@ const History = () => {
             },
           };
         });
-
-      console.log(" Processed trades:", processedTrades.length);
-      console.log(" First trade factors:", processedTrades[0]?.factors);
 
       setTradeHistory(processedTrades);
     } catch (err) {

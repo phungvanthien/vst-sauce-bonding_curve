@@ -153,7 +153,7 @@ export class HashConnectManager {
       // Note: You need to get a real Project ID from https://www.hashpack.app/
       const projectId = import.meta.env.VITE_HASHCONNECT_PROJECT_ID || "demo-app-v1";
 
-      console.log("🔍 HashConnectManager: Using project ID:", projectId);
+
 
       // Create the hashconnect instance for this user
       this.instance = new HashConnect(
@@ -183,20 +183,15 @@ export class HashConnectManager {
    * This is the manual connection flow where user clicks "Connect"
    */
   async initHashConnect(): Promise<void> {
-    console.log("🔍 HashConnectManager: initHashConnect() called");
     const instance = await this.ensureHashConnectInitialized();
-    console.log("🔍 HashConnectManager: HashConnect instance ready");
     
     // Check if we're already paired before opening the modal
     if (this.connectionState === HashConnectConnectionState.Paired && this.pairingData) {
-      console.log("🔍 HashConnectManager: Already paired, skipping");
       return;
     }
     
     // Open pairing modal for user to connect
-    console.log("🔍 HashConnectManager: calling instance.openPairingModal()");
     instance.openPairingModal();
-    console.log("🔍 HashConnectManager: openPairingModal() called");
   }
 
   /**
@@ -287,17 +282,11 @@ export class HashConnectManager {
       throw new Error("No paired account found. Please connect your wallet first.");
     }
 
-    console.log('🔗 Executing transaction via HashConnect...', {
-      accountId: resolvedAccountId,
-      transactionType: transaction.constructor.name
-    });
-
     try {
       // Send transaction via HashConnect
       // Use type assertion to resolve SDK version compatibility
       const result = await this.instance!.sendTransaction(resolvedAccountId as any, transaction);
       
-      console.log('✅ HashConnect transaction result:', result);
       return result;
       
     } catch (error) {

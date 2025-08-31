@@ -92,11 +92,8 @@ const Vault: React.FC = () => {
     try {
       const userAddress = getUserAddress(user);
       if (!userAddress) {
-        console.log("No user address available for token balance");
         return;
       }
-
-      console.log("Loading token balance for user:", userAddress);
 
       // Get token address from selected vault or first available vault
       let tokenAddress = "";
@@ -105,7 +102,6 @@ const Vault: React.FC = () => {
       } else if (vaults.length > 0 && vaults[0].tokenAddress) {
         tokenAddress = vaults[0].tokenAddress;
       } else {
-        console.log("No token address available for balance check");
         return;
       }
 
@@ -119,13 +115,11 @@ const Vault: React.FC = () => {
       const tokenDecimals = await getTokenDecimal(
         tokenAddress as `0x${string}`
       );
-      console.log(`Token decimals for ${tokenAddress}: ${tokenDecimals}`);
 
       // Convert from smallest units to human readable using dynamic decimals
       const balanceInUnits = Number(balance) / Math.pow(10, tokenDecimals);
 
       setUserTokenBalance(balanceInUnits);
-      console.log("Token balance loaded:", balanceInUnits);
     } catch (error) {
       console.error("Error loading token balance:", error);
       setUserTokenBalance(0);
@@ -137,7 +131,6 @@ const Vault: React.FC = () => {
   // Set HashConnect data when available
   useEffect(() => {
     if (manager && pairingData) {
-      console.log("🔗 Setting HashConnect data for vault service");
       setHashConnectData(manager, pairingData);
     }
   }, [manager, pairingData, setHashConnectData]);
@@ -145,7 +138,6 @@ const Vault: React.FC = () => {
   // Load data when user changes
   useEffect(() => {
     if (user && vaults.length > 0) {
-      console.log("🔄 Initial vault data load");
       const loadData = async () => {
         setIsLoadingVaultData(true);
         try {
@@ -165,10 +157,6 @@ const Vault: React.FC = () => {
   // Load user data when selected vault changes
   useEffect(() => {
     if (selectedVault && user) {
-      console.log(
-        "🔄 Loading user data for selected vault:",
-        selectedVault.name
-      );
       const userAddress = getUserAddress(user);
       if (userAddress) {
         loadUserData(userAddress);
@@ -224,11 +212,6 @@ const Vault: React.FC = () => {
       // Convert user address to EVM address for token approval
       const userEvmAddress = await accountIdToEvmAddress(userAddress);
 
-      console.log("🔐 Checking and approving tokens before deposit...");
-      console.log("User EVM address:", userEvmAddress);
-      console.log("Vault address:", selectedVault.vaultAddress);
-      console.log("Token address:", selectedVault.tokenAddress);
-
       // Get token decimals for approval
       const tokenDecimals = await getTokenDecimal(
         selectedVault.tokenAddress as `0x${string}`
@@ -248,11 +231,6 @@ const Vault: React.FC = () => {
       if (!approvalResult.success) {
         throw new Error(`Token approval failed: ${approvalResult.error}`);
       }
-
-      console.log(
-        "✅ Token approval successful:",
-        approvalResult.transactionHash
-      );
 
       // Show approval success toast
       if (
@@ -290,8 +268,6 @@ const Vault: React.FC = () => {
 
   // Xử lý withdraw - chỉ hiển thị popup, không thực hiện transaction
   const handleWithdraw = async () => {
-    console.log("🔍 handleWithdraw called - starting local withdraw logic");
-
     if (!withdrawAmount) {
       toast({
         title: "Error",
@@ -310,12 +286,10 @@ const Vault: React.FC = () => {
       });
 
       // Simulate processing delay
-      console.log("🔍 Starting 3 second delay simulation");
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
       // Reset form (không hiển thị thông báo thành công)
       setWithdrawAmount("");
-      console.log("🔍 handleWithdraw completed");
     } finally {
       setIsWithdrawing(false);
     }

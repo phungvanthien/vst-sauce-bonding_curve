@@ -113,7 +113,6 @@ export function HashConnectProvider({ children }: HashConnectProviderProps) {
         setHasAttemptedAutoConnect(true);
         setIsAutoConnecting(true);
         try {
-          console.log("🔍 HashConnectContext: Attempting auto-connect");
           await manager.autoConnectHashConnect();
         } catch (error) {
           console.error("Auto-connect failed:", error);
@@ -133,18 +132,14 @@ export function HashConnectProvider({ children }: HashConnectProviderProps) {
    * Opens the HashPack pairing modal for user to connect wallet
    */
   const connect = async () => {
-    console.log("🔍 HashConnectContext: connect() called");
     // Prevent multiple simultaneous connection attempts
     if (isConnecting || isAutoConnecting) {
-      console.log("🔍 HashConnectContext: Already connecting, skipping");
       return;
     }
 
     setIsConnecting(true);
     try {
-      console.log("🔍 HashConnectContext: calling manager.initHashConnect()");
       await manager.initHashConnect();
-      console.log("🔍 HashConnectContext: manager.initHashConnect() completed");
     } catch (error) {
       console.error("❌ HashConnectContext: Failed to connect:", error);
     } finally {

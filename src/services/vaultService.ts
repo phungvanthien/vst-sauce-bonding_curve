@@ -146,18 +146,11 @@ export class VaultService {
 
   constructor(config: VaultServiceConfig = {}) {
     this.config = { ...this.DEFAULT_CONFIG, ...config };
-
-    console.log('🔍 VaultService constructor called with config:');
-    console.dir(this.config, { depth: null });
     
     // Initialize signer if manager and pairingData are provided
     if (config.manager && config.pairingData) {
       this.config.signer = this.getSigner(config.manager, config.pairingData);
     }
-
-    // Debug log
-    console.log('🔍 VaultService initialized with config:');
-    console.dir(this.config, { depth: null });
   }
 
   /**
@@ -167,35 +160,28 @@ export class VaultService {
   async initializeVaultContract(): Promise<void> {
     // Prevent repeated initialization
     if (this.config.isInitialized) {
-      console.log('🔍 Vault contract already initialized, skipping...');
       return;
     }
 
     try {
       // Check if we have vaultAddress but no vaultContractId
       if (this.config.vaultAddress && !this.config.vaultContractId) {
-        console.log('🔧 Converting vaultAddress to vaultContractId:', this.config.vaultAddress);
         this.config.vaultContractId = await evmAliasAddressToContractId(this.config.vaultAddress);
-        console.log('✅ vaultContractId set:', this.config.vaultContractId);
       }
       
       // Check if we have vaultContractId but no vaultAddress
       if (this.config.vaultContractId && !this.config.vaultAddress) {
-        console.log('🔧 Converting vaultContractId to vaultAddress:', this.config.vaultContractId);
         this.config.vaultAddress = await contractIdToEvmAliasAddress(this.config.vaultContractId);
-        console.log('✅ vaultAddress set:', this.config.vaultAddress);
       }
       
       // If both exist, validate they match
       if (this.config.vaultAddress && this.config.vaultContractId) {
-        console.log('🔍 Validating vaultAddress and vaultContractId match...');
         const expectedEvmAddress = await contractIdToEvmAliasAddress(this.config.vaultContractId);
         if (this.config.vaultAddress !== expectedEvmAddress) {
           console.warn('⚠️ vaultAddress and vaultContractId do not match, but keeping original address');
           // Don't update the vaultAddress to prevent infinite loops
           // The contract ID is what matters for operations
         }
-        console.log('✅ Validation complete');
       }
       
       // Mark as initialized
@@ -234,13 +220,11 @@ export class VaultService {
     try {
       // If the vault address is the same and already initialized, skip
       if (this.config.vaultAddress === vaultAddress && this.config.isInitialized) {
-        console.log('🔍 Same vault address, skipping re-initialization');
         return;
       }
       
       // Only reset if we have a different vault address AND we're already initialized
       if (this.config.vaultAddress !== vaultAddress && this.config.isInitialized) {
-        console.log('🔄 Different vault address detected, resetting initialization');
         this.config.isInitialized = false;
         this.config.vaultContractId = null;
       }
@@ -259,7 +243,6 @@ export class VaultService {
   resetInitialization(): void {
     this.config.isInitialized = false;
     this.config.vaultContractId = null;
-    console.log('🔄 Vault service initialization reset');
   }
 
   /**
