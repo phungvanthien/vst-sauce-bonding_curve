@@ -33,7 +33,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useHashConnect } from "@/contexts/HashConnectContext";
+import { useWallet } from "@/contexts/WalletContext";
 import { useVault } from "@/contexts/VaultContext";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -48,12 +48,18 @@ import {
   formatHash,
   getTimeRemaining,
   formatRelativeTime,
+  getVaultStatus,
 } from "@/utils/vault-utils";
 import { VAULTS_CONFIG } from "@/config/hederaConfig";
-import { checkAndApproveTokens, getTokenDecimal } from "@/utils/token-utils";
+import {
+  checkAndApproveTokens,
+  getTokenDecimal,
+  waitForEVMNativeBalance,
+} from "@/utils/token-utils";
 
 const Vault: React.FC = () => {
   const { user } = useAuth();
+  const { walletInfo } = useWallet();
   const {
     vaults,
     selectedVault,
@@ -67,21 +73,18 @@ const Vault: React.FC = () => {
     loadTopTraders,
     loadTransactionHistory,
     deposit,
-    checkWithdrawStatus,
     setHashConnectData,
+    setEVMSigner,
     callGetVaultInfo,
   } = useVault();
-  const { manager, pairingData } = useHashConnect();
 
   const [depositAmount, setDepositAmount] = useState("");
-  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [showDepositForm, setShowDepositForm] = useState(false);
   const [userTokenBalance, setUserTokenBalance] = useState(0);
   const [isLoadingTokenBalance, setIsLoadingTokenBalance] = useState(false);
 
   // Loading states moved from VaultContext
   const [isLoading, setIsLoading] = useState(false);
-  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isLoadingVaultData, setIsLoadingVaultData] = useState(false);
 
   // Load token balance from account
@@ -128,12 +131,22 @@ const Vault: React.FC = () => {
     }
   }, [user, selectedVault, vaults]);
 
-  // Set HashConnect data when available
+  // Set wallet signer based on wallet type
   useEffect(() => {
-    if (manager && pairingData) {
-      setHashConnectData(manager, pairingData);
+    if (walletInfo?.isConnected) {
+      if (
+        walletInfo.type === "hashpack" &&
+        walletInfo.manager &&
+        walletInfo.pairingData
+      ) {
+        // Set HashPack signer
+        setHashConnectData(walletInfo.manager, walletInfo.pairingData);
+      } else if (walletInfo.type === "evm" && walletInfo.evmSigner) {
+        // Set EVM signer
+        setEVMSigner(walletInfo.evmSigner);
+      }
     }
-  }, [manager, pairingData, setHashConnectData]);
+  }, [walletInfo, setHashConnectData, setEVMSigner]);
 
   // Load data when user changes
   useEffect(() => {
@@ -162,7 +175,6 @@ const Vault: React.FC = () => {
         loadUserData(userAddress);
         loadTopTraders();
         loadTransactionHistory(userAddress);
-        checkWithdrawStatus();
         loadUserTokenBalance(); // Reload balance when vault changes
 
         // Also call getVaultInfo when vault is selected
@@ -177,7 +189,6 @@ const Vault: React.FC = () => {
     loadUserData,
     loadTopTraders,
     loadTransactionHistory,
-    checkWithdrawStatus,
     callGetVaultInfo,
     loadUserTokenBalance,
   ]);
@@ -219,13 +230,14 @@ const Vault: React.FC = () => {
 
       // Check and approve tokens for the vault
       const approvalResult = await checkAndApproveTokens(
-        manager,
-        pairingData,
+        walletInfo?.manager,
+        walletInfo?.pairingData,
         selectedVault.tokenAddress,
         userEvmAddress,
         selectedVault.vaultAddress,
         depositAmount,
-        tokenDecimals
+        tokenDecimals,
+        walletInfo?.type || "hashpack"
       );
 
       if (!approvalResult.success) {
@@ -240,6 +252,32 @@ const Vault: React.FC = () => {
           title: "Token Approved",
           description:
             "Tokens approved successfully. Proceeding with deposit...",
+        });
+      }
+
+      // For EVM wallets, wait for native balance to be available after approval
+      if (walletInfo?.type === "evm") {
+        toast({
+          title: "Checking Balance",
+          description: "Waiting for native token balance to update...",
+        });
+
+        const balanceAvailable = await waitForEVMNativeBalance(userEvmAddress);
+
+        if (!balanceAvailable) {
+          toast({
+            title: "Balance Check Failed",
+            description:
+              "Please check your HBAR balance and click deposit again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        toast({
+          title: "Balance Ready",
+          description:
+            "Native token balance is now available. Proceeding with deposit...",
         });
       }
 
@@ -263,35 +301,6 @@ const Vault: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Xử lý withdraw - chỉ hiển thị popup, không thực hiện transaction
-  const handleWithdraw = async () => {
-    if (!withdrawAmount) {
-      toast({
-        title: "Error",
-        description: "Please enter withdrawal amount",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsWithdrawing(true);
-    try {
-      // Hiển thị popup "withdraw processing" ngay khi bấm
-      toast({
-        title: "Withdraw Processing",
-        description: "Please wait while we process your withdrawal request...",
-      });
-
-      // Simulate processing delay
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      // Reset form (không hiển thị thông báo thành công)
-      setWithdrawAmount("");
-    } finally {
-      setIsWithdrawing(false);
     }
   };
 
@@ -320,7 +329,11 @@ const Vault: React.FC = () => {
           <div className="flex items-center gap-2">
             <Wallet className="h-5 w-5 text-cyrus-accent" />
             <span className="text-sm text-cyrus-textSecondary">
-              HashPack Connected
+              {walletInfo?.type === "hashpack"
+                ? "HashPack Connected"
+                : walletInfo?.type === "evm"
+                ? "EVM Wallet Connected"
+                : "No Wallet Connected"}
             </span>
           </div>
           <Button
@@ -402,208 +415,205 @@ const Vault: React.FC = () => {
           <TabsTrigger value="transactions">Recent Transactions</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="vaults" className="space-y-6">
-          {/* Vault List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Vaults */}
-            {vaults.map((vault) => {
-              const runTimeRemaining = getTimeRemaining(vault.runTimestamp);
-              const stopTimeRemaining = getTimeRemaining(vault.stopTimestamp);
+        {/* Vault List */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Vaults */}
+          {vaults.map((vault) => {
+            const vaultStatus = getVaultStatus(vault);
 
-              return (
-                <Card
-                  key={vault.id}
-                  className={`cursor-pointer transition-all hover:shadow-lg ${
-                    selectedVault?.id === vault.id
-                      ? "ring-2 ring-cyrus-accent"
-                      : ""
-                  }`}
-                  onClick={() => setSelectedVault(vault)}
-                >
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">{vault.name}</CardTitle>
-                      <Badge
-                        variant={
-                          vault.status === "active" ? "default" : "secondary"
-                        }
-                        className={
-                          vault.depositsClosed
-                            ? "bg-orange-500"
-                            : "bg-green-500"
-                        }
-                      >
-                        {vault.depositsClosed ? "Deposits Closed" : "Active"}
-                      </Badge>
-                    </div>
-                    <CardDescription>{vault.description}</CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="space-y-4">
-                    {/* APY và Risk */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-green-500" />
-                        <span className="text-sm font-medium">
-                          {vault.apy}% APY
-                        </span>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={
-                          vault.riskLevel === "Low"
-                            ? "border-green-500 text-green-500"
-                            : vault.riskLevel === "Medium"
-                            ? "border-yellow-500 text-yellow-500"
-                            : "border-red-500 text-red-500"
-                        }
-                      >
-                        {vault.riskLevel} Risk
-                      </Badge>
-                    </div>
-
-                    {/* Total Deposits */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-cyrus-textSecondary">
-                        Total Deposits
-                      </span>
-                      <span className="font-medium">
-                        {formatVaultAmount(vault.totalDeposits)}
-                      </span>
-                    </div>
-
-                    {/* Shareholders */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-cyrus-textSecondary">
-                        Shareholders
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4" />
-                        <span className="font-medium">
-                          {vault.shareholderCount}/{vault.maxShareholders}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <Progress
-                      value={
-                        (vault.shareholderCount / vault.maxShareholders) * 100
+            return (
+              <Card
+                key={vault.id}
+                className={`cursor-pointer transition-all hover:shadow-lg ${
+                  selectedVault?.id === vault.id
+                    ? "ring-2 ring-cyrus-accent"
+                    : ""
+                }`}
+                onClick={() => setSelectedVault(vault)}
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{vault.name}</CardTitle>
+                    <Badge
+                      variant={
+                        vaultStatus.status === "active"
+                          ? "default"
+                          : "secondary"
                       }
-                      className="h-2"
-                    />
+                      className={vaultStatus.className}
+                    >
+                      {vaultStatus.label}
+                    </Badge>
+                  </div>
+                  <CardDescription>{vault.description}</CardDescription>
+                </CardHeader>
 
-                    {/* Timestamps */}
-                    <div className="space-y-2 text-xs text-cyrus-textSecondary">
-                      <div className="flex items-center justify-between">
-                        <span>Deposits Close:</span>
-                        <span>{formatTimestamp(vault.runTimestamp)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Withdrawals Open:</span>
-                        <span>{formatTimestamp(vault.stopTimestamp)}</span>
-                      </div>
+                <CardContent className="space-y-4">
+                  {/* APY và Risk */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-green-500" />
+                      <span className="text-sm font-medium">
+                        {vault.apy}% APY
+                      </span>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    <Badge
+                      variant="outline"
+                      className={
+                        vault.riskLevel === "Low"
+                          ? "border-green-500 text-green-500"
+                          : vault.riskLevel === "Medium"
+                          ? "border-yellow-500 text-yellow-500"
+                          : "border-red-500 text-red-500"
+                      }
+                    >
+                      {vault.riskLevel} Risk
+                    </Badge>
+                  </div>
 
-            {/* Coming Soon Vault */}
-            <Card
-              className={`cursor-pointer transition-all hover:shadow-lg ${
-                selectedVault?.name === "Coming Soon..."
-                  ? "ring-2 ring-cyrus-accent"
-                  : ""
-              }`}
-              onClick={() =>
-                setSelectedVault({
-                  id: 999,
-                  name: "Coming Soon...",
-                  description: "New vault strategies are being developed",
-                  token: "TBD",
-                  tokenAddress: "",
-                  vaultAddress: "",
-                  totalDeposits: 0,
-                  totalShares: 0,
-                  shareholderCount: 0,
-                  maxShareholders: 50,
-                  runTimestamp: 0,
-                  stopTimestamp: 0,
-                  depositsClosed: true,
-                  withdrawalsEnabled: false,
-                  apy: 0,
-                  riskLevel: "TBD",
-                  status: "coming_soon",
-                })
-              }
-            >
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Coming Soon...</CardTitle>
-                  <Badge variant="secondary" className="bg-gray-500">
-                    Coming Soon
-                  </Badge>
-                </div>
-                <CardDescription>
-                  New vault strategies are being developed
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                {/* APY và Risk */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-400">
-                      TBD% APY
+                  {/* Total Deposits */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-cyrus-textSecondary">
+                      Total Deposits
+                    </span>
+                    <span className="font-medium">
+                      {formatVaultAmount(vault.totalDeposits)}
                     </span>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className="border-gray-400 text-gray-400"
-                  >
-                    TBD Risk
-                  </Badge>
-                </div>
 
-                {/* Total Deposits */}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-cyrus-textSecondary">
-                    Total Deposits
-                  </span>
-                  <span className="font-medium text-gray-400">$0.00</span>
-                </div>
-
-                {/* Shareholders */}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-cyrus-textSecondary">
-                    Shareholders
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-gray-400" />
-                    <span className="font-medium text-gray-400">0/50</span>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <Progress value={0} className="h-2 bg-gray-200" />
-
-                {/* Timestamps */}
-                <div className="space-y-2 text-xs text-cyrus-textSecondary">
+                  {/* Shareholders */}
                   <div className="flex items-center justify-between">
-                    <span>Deposits Close:</span>
-                    <span className="text-gray-400">TBD</span>
+                    <span className="text-sm text-cyrus-textSecondary">
+                      Shareholders
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      <span className="font-medium">
+                        {vault.shareholderCount}/{vault.maxShareholders}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span>Withdrawals Open:</span>
-                    <span className="text-gray-400">TBD</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
 
+                  {/* Progress bar */}
+                  <Progress
+                    value={
+                      (vault.shareholderCount / vault.maxShareholders) * 100
+                    }
+                    className="h-2"
+                  />
+
+                  {/* Timestamps */}
+                  <div className="space-y-2 text-xs text-cyrus-textSecondary">
+                    <div className="flex items-center justify-between">
+                      <span>Deposit Close:</span>
+                      <span>{formatTimestamp(vault.runTimestamp)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Vault Close:</span>
+                      <span>{formatTimestamp(vault.stopTimestamp)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+
+          {/* Coming Soon Vault */}
+          <Card
+            className={`cursor-pointer transition-all hover:shadow-lg ${
+              selectedVault?.name === "Coming Soon..."
+                ? "ring-2 ring-cyrus-accent"
+                : ""
+            }`}
+            onClick={() =>
+              setSelectedVault({
+                id: 999,
+                name: "Coming Soon...",
+                description: "New vault strategies are being developed",
+                token: "TBD",
+                tokenAddress: "",
+                vaultAddress: "",
+                totalDeposits: 0,
+                totalShares: 0,
+                shareholderCount: 0,
+                maxShareholders: 50,
+                runTimestamp: 0,
+                stopTimestamp: 0,
+                depositsClosed: true,
+                withdrawalsEnabled: false,
+                apy: 0,
+                riskLevel: "TBD",
+                status: "coming_soon",
+              })
+            }
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Coming Soon...</CardTitle>
+                <Badge variant="secondary" className="bg-gray-500">
+                  Coming Soon
+                </Badge>
+              </div>
+              <CardDescription>
+                New vault strategies are being developed
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              {/* APY và Risk */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-400">
+                    TBD% APY
+                  </span>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-gray-400 text-gray-400"
+                >
+                  TBD Risk
+                </Badge>
+              </div>
+
+              {/* Total Deposits */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-cyrus-textSecondary">
+                  Total Deposits
+                </span>
+                <span className="font-medium text-gray-400">$0.00</span>
+              </div>
+
+              {/* Shareholders */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-cyrus-textSecondary">
+                  Shareholders
+                </span>
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-gray-400" />
+                  <span className="font-medium text-gray-400">0/50</span>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <Progress value={0} className="h-2 bg-gray-200" />
+
+              {/* Timestamps */}
+              <div className="space-y-2 text-xs text-cyrus-textSecondary">
+                <div className="flex items-center justify-between">
+                  <span>Deposits Close:</span>
+                  <span className="text-gray-400">TBD</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Vault Close:</span>
+                  <span className="text-gray-400">TBD</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <TabsContent value="vaults" className="space-y-6">
           {/* Selected Vault Details */}
           {selectedVault && (
             <Card className="mt-6">
@@ -781,7 +791,7 @@ const Vault: React.FC = () => {
                       <h3 className="font-semibold text-lg">Quick Actions</h3>
 
                       {/* Deposit Button */}
-                      {!selectedVault.depositsClosed && (
+                      {getVaultStatus(selectedVault).status === "active" && (
                         <div className="space-y-4">
                           {!showDepositForm ? (
                             <Button
@@ -844,42 +854,6 @@ const Vault: React.FC = () => {
                           )}
                         </div>
                       )}
-
-                      {/* Withdraw Button */}
-                      {selectedVault.withdrawalsEnabled && (
-                        <div className="space-y-2">
-                          <Label htmlFor="withdraw-amount">
-                            Withdraw ({selectedVault.token})
-                          </Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="withdraw-amount"
-                              type="number"
-                              placeholder={`Enter ${selectedVault.token} amount`}
-                              value={withdrawAmount}
-                              onChange={(e) =>
-                                setWithdrawAmount(e.target.value)
-                              }
-                              disabled={isWithdrawing}
-                            />
-                            <Button
-                              onClick={handleWithdraw}
-                              disabled={isWithdrawing || !withdrawAmount}
-                              variant="outline"
-                              className="border-red-500 text-red-500 hover:bg-red-50"
-                            >
-                              {isWithdrawing ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
-                                  Processing...
-                                </div>
-                              ) : (
-                                "Withdraw"
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
                     </div>
 
                     {/* Vault Stats */}
@@ -931,6 +905,7 @@ const Vault: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                {selectedVault && selectedVault.name !== "Coming Soon..." && ""}
                 {vaults.filter((vault) => userShares > 0).length > 0 ? (
                   vaults.map((vault) => (
                     <div
@@ -957,9 +932,9 @@ const Vault: React.FC = () => {
                 ) : (
                   <div className="text-center py-8 text-cyrus-textSecondary">
                     <Wallet className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No vault positions found</p>
+                    <p>No position found</p>
                     <p className="text-sm">
-                      Start investing in vaults to see your positions here
+                      Start investing in this vault to see your positions
                     </p>
                   </div>
                 )}

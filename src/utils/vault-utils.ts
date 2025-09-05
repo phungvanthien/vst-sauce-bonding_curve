@@ -1,4 +1,4 @@
-import { TraderInfo, Transaction, WithdrawStatus, VaultState } from '@/services/vaultService';
+import { TraderInfo, Transaction, VaultState } from '@/services/vaultService';
 import { VAULTS_CONFIG } from '@/config/hederaConfig';
 import { getTokenSymbolFromAddress } from '@/config/tokenAddress';
 
@@ -83,16 +83,6 @@ export function generateTransactions(vaultAddress: string): Transaction[] {
   return [];
 }
 
-// Generate withdraw status - now returns default status since we only use real data
-export function generateWithdrawStatus(vault: Vault): WithdrawStatus {
-  return {
-    canWithdraw: false,
-    isProcessing: false,
-    message: 'Withdrawals are not yet enabled for this vault',
-    timeRemaining: undefined
-  };
-}
-
 // Validate vault for operations
 export function validateVaultForDeposit(vault: Vault): void {
   if (vault.depositsClosed) {
@@ -157,6 +147,40 @@ export function formatRelativeTime(timestamp: number): string {
   if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
   if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
   return 'Just now';
+}
+
+// Determine vault status based on current time and vault timestamps
+export function getVaultStatus(vault: Vault): {
+  status: 'active' | 'deposits-closed' | 'vault-closed';
+  label: string;
+  className: string;
+} {
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  
+  // Check if vault is closed (past stop timestamp)
+  if (currentTimestamp >= vault.stopTimestamp) {
+    return {
+      status: 'vault-closed',
+      label: 'Vault Closed',
+      className: 'bg-red-500'
+    };
+  }
+  
+  // Check if deposits are closed (past run timestamp or manually closed)
+  if (currentTimestamp >= vault.runTimestamp || vault.depositsClosed) {
+    return {
+      status: 'deposits-closed',
+      label: 'Deposits Closed',
+      className: 'bg-orange-500'
+    };
+  }
+  
+  // Vault is active (before run timestamp and deposits not manually closed)
+  return {
+    status: 'active',
+    label: 'Active',
+    className: 'bg-green-500'
+  };
 }
 
 // Calculate shares for vaults

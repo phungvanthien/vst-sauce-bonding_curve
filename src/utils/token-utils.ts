@@ -273,6 +273,82 @@ function getSigner(manager: any, pairingData: any): any {
 }
 
 /**
+ * Get EVM provider from window.ethereum
+ */
+function getEVMProvider(): ethers.providers.Web3Provider {
+  if (!(window as any).ethereum) {
+    throw new Error('No EVM wallet detected. Please install MetaMask or another EVM wallet.');
+  }
+  return new ethers.providers.Web3Provider((window as any).ethereum);
+}
+
+/**
+ * Get EVM signer from window.ethereum
+ */
+function getEVMSigner(): any {
+  const provider = getEVMProvider();
+  return provider.getSigner();
+}
+
+/**
+ * Get native token balance for EVM wallet
+ * @param userAddress - The user's EVM address
+ * @returns Promise<number> - Native token balance
+ */
+export async function getEVMNativeBalance(userAddress: string): Promise<number> {
+  try {
+    const provider = getEVMProvider();
+    const balance = await provider.getBalance(userAddress);
+    // Convert from wei to HBAR (assuming 18 decimals for native token)
+    return parseFloat(ethers.utils.formatEther(balance));
+  } catch (error) {
+    console.error('[token-utils] Error getting EVM native balance:', error);
+    return 0;
+  }
+}
+
+/**
+ * Wait for native token balance to be available with retry logic
+ * @param userAddress - The user's EVM address
+ * @param maxRetries - Maximum number of retries (default: 20)
+ * @param retryDelay - Delay between retries in milliseconds (default: 5000)
+ * @returns Promise<boolean> - True if balance is available, false if max retries reached
+ */
+export async function waitForEVMNativeBalance(
+  userAddress: string,
+  maxRetries: number = 20,
+  retryDelay: number = 5000
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const balance = await getEVMNativeBalance(userAddress);
+      
+      if (balance > 0) {
+        console.log(`[token-utils] Native balance available: ${balance} HBAR (attempt ${attempt})`);
+        return true;
+      }
+      
+      console.log(`[token-utils] Native balance still 0, retrying in ${retryDelay}ms... (attempt ${attempt}/${maxRetries})`);
+      
+      // Wait before next retry (except on last attempt)
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    } catch (error) {
+      console.error(`[token-utils] Error checking balance on attempt ${attempt}:`, error);
+      
+      // Wait before next retry (except on last attempt)
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+  }
+  
+  console.log(`[token-utils] Max retries (${maxRetries}) reached, native balance still not available`);
+  return false;
+}
+
+/**
  * Check token allowance for a specific spender
  * @param tokenAddress - The token contract address
  * @param ownerAddress - The owner's address (who owns the tokens)
@@ -312,7 +388,7 @@ export async function checkTokenAllowance(
 }
 
 /**
- * Approve tokens for a spender
+ * Approve tokens for a spender using HashPack wallet
  * @param manager - HashConnect manager instance
  * @param pairingData - HashConnect pairing data
  * @param tokenAddress - The token contract address
@@ -321,7 +397,7 @@ export async function checkTokenAllowance(
  * @param decimals - Token decimals (optional, will be fetched if not provided)
  * @returns Promise<TokenApprovalResponse> - Approval transaction result
  */
-export async function approveTokens(
+export async function approveTokensHashPack(
   manager: any,
   pairingData: any,
   tokenAddress: string,
@@ -368,7 +444,7 @@ export async function approveTokens(
       data: result
     };
   } catch (error) {
-    console.error('[token-utils] Error approving tokens:', error);
+    console.error('[token-utils] Error approving tokens with HashPack:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
@@ -377,14 +453,103 @@ export async function approveTokens(
 }
 
 /**
- * Check if approval is needed and approve if necessary
- * @param manager - HashConnect manager instance
- * @param pairingData - HashConnect pairing data
+ * Approve tokens for a spender using EVM wallet
+ * @param tokenAddress - The token contract address
+ * @param spenderAddress - The spender's address to approve
+ * @param amount - Amount to approve (can be string or bigint)
+ * @param decimals - Token decimals (optional, will be fetched if not provided)
+ * @returns Promise<TokenApprovalResponse> - Approval transaction result
+ */
+export async function approveTokensEVM(
+  tokenAddress: string,
+  spenderAddress: string,
+  amount: string | bigint,
+  decimals?: number
+): Promise<TokenApprovalResponse> {
+  try {
+    // Get token decimals if not provided
+    let tokenDecimals = decimals;
+    if (tokenDecimals === undefined) {
+      tokenDecimals = await getTokenDecimal(tokenAddress as `0x${string}`);
+    }
+
+    // Convert amount to smallest units if it's a string
+    let amountWei: bigint;
+    if (typeof amount === 'string') {
+      const amountNum = parseFloat(amount);
+      const amountSmallest = Math.round(amountNum * Math.pow(10, tokenDecimals));
+      amountWei = BigInt(amountSmallest);
+    } else {
+      amountWei = amount;
+    }
+
+    // Get EVM signer
+    const signer = getEVMSigner();
+
+    // Create token contract instance
+    const tokenContract = new ethers.Contract(
+      tokenAddress,
+      ['function approve(address spender, uint256 amount) returns (bool)'],
+      signer
+    );
+
+    // Execute approval transaction
+    const tx = await tokenContract.approve(spenderAddress, amountWei);
+    
+    // Wait for transaction confirmation
+    const receipt = await tx.wait();
+
+    return {
+      success: true,
+      transactionHash: tx.hash,
+      data: receipt
+    };
+  } catch (error) {
+    console.error('[token-utils] Error approving tokens with EVM wallet:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+/**
+ * Approve tokens for a spender (supports both HashPack and EVM wallets)
+ * @param manager - HashConnect manager instance (optional for EVM wallets)
+ * @param pairingData - HashConnect pairing data (optional for EVM wallets)
+ * @param tokenAddress - The token contract address
+ * @param spenderAddress - The spender's address to approve
+ * @param amount - Amount to approve (can be string or bigint)
+ * @param decimals - Token decimals (optional, will be fetched if not provided)
+ * @param walletType - Wallet type ('hashpack' or 'evm')
+ * @returns Promise<TokenApprovalResponse> - Approval transaction result
+ */
+export async function approveTokens(
+  manager: any,
+  pairingData: any,
+  tokenAddress: string,
+  spenderAddress: string,
+  amount: string | bigint,
+  decimals?: number,
+  walletType: 'hashpack' | 'evm' = 'hashpack'
+): Promise<TokenApprovalResponse> {
+  if (walletType === 'evm') {
+    return await approveTokensEVM(tokenAddress, spenderAddress, amount, decimals);
+  } else {
+    return await approveTokensHashPack(manager, pairingData, tokenAddress, spenderAddress, amount, decimals);
+  }
+}
+
+/**
+ * Check if approval is needed and approve if necessary (supports both HashPack and EVM wallets)
+ * @param manager - HashConnect manager instance (optional for EVM wallets)
+ * @param pairingData - HashConnect pairing data (optional for EVM wallets)
  * @param tokenAddress - The token contract address
  * @param ownerAddress - The owner's address
  * @param spenderAddress - The spender's address
  * @param requiredAmount - Amount that needs to be approved
  * @param decimals - Token decimals (optional)
+ * @param walletType - Wallet type ('hashpack' or 'evm')
  * @returns Promise<TokenApprovalResponse> - Result of the approval process
  */
 export async function checkAndApproveTokens(
@@ -394,10 +559,10 @@ export async function checkAndApproveTokens(
   ownerAddress: string,
   spenderAddress: string,
   requiredAmount: string | bigint,
-  decimals?: number
+  decimals?: number,
+  walletType: 'hashpack' | 'evm' = 'hashpack'
 ): Promise<TokenApprovalResponse> {
   try {
-
     // Convert required amount to bigint for comparison
     let requiredAmountBigInt: bigint;
     if (typeof requiredAmount === 'string') {
@@ -425,17 +590,16 @@ export async function checkAndApproveTokens(
       };
     }
 
-    // Approve the required amount
+    // Approve the required amount using the appropriate wallet type
     const approvalResult = await approveTokens(
       manager,
       pairingData,
       tokenAddress,
       spenderAddress,
       requiredAmount,
-      decimals
+      decimals,
+      walletType
     );
-
-
 
     return approvalResult;
   } catch (error) {

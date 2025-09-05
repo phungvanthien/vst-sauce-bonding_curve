@@ -60,12 +60,6 @@ export interface VaultInfo {
   status: string;
 }
 
-export interface WithdrawStatus {
-  canWithdraw: boolean;
-  isProcessing: boolean;
-  message: string;
-  timeRemaining?: string;
-}
 
 export interface Transaction {
   hash: string;
@@ -73,7 +67,7 @@ export interface Transaction {
   to: string;
   value: string;
   timestamp: number;
-  type: 'deposit' | 'withdraw';
+  type: 'deposit';
   blockNumber: number;
 }
 
@@ -102,6 +96,10 @@ export interface VaultServiceConfig {
   manager?: any;
   pairingData?: any;
   vaultAddress?: string;
+  
+  // Wallet Configuration
+  walletType?: 'hashpack' | 'evm';
+  evmSigner?: any; // For EVM wallet operations
   
   // Internal State (managed by service, not user-configurable)
   ethersProvider?: ethers.providers.JsonRpcProvider | null;
@@ -136,6 +134,10 @@ export class VaultService {
     manager: null,
     pairingData: null,
     vaultAddress: undefined,
+    
+    // Wallet Configuration
+    walletType: 'hashpack',
+    evmSigner: null,
     
     // Internal State
     ethersProvider: null,
@@ -211,6 +213,22 @@ export class VaultService {
     this.config.manager = manager;
     this.config.pairingData = pairingData;
     this.config.signer = this.getSigner(manager, pairingData);
+    this.config.walletType = 'hashpack';
+  }
+
+  /**
+   * Set EVM signer for EVM wallet operations
+   */
+  setEVMSigner(evmSigner: any): void {
+    this.config.evmSigner = evmSigner;
+    this.config.walletType = 'evm';
+  }
+
+  /**
+   * Set wallet type explicitly
+   */
+  setWalletType(walletType: 'hashpack' | 'evm'): void {
+    this.config.walletType = walletType;
   }
 
   /**
@@ -305,7 +323,6 @@ export class VaultService {
       // Calculate current time-based states
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const depositsClosedByTime = currentTimestamp >= runTimestamp.toNumber();
-      const withdrawalsEnabledByTime = currentTimestamp >= stopTimestamp.toNumber();
       
       // Convert values
       const totalSharesNum = _totalShares.toNumber();
@@ -320,7 +337,7 @@ export class VaultService {
         totalBalance: totalBalanceNum,
         shareholderCount: _shareholderCount.toNumber(),
         depositsClosed: _depositsClosed || depositsClosedByTime,
-        withdrawalsEnabled: withdrawalsEnabledByTime,
+        withdrawalsEnabled: false, // Withdrawals are disabled
         vaultClosed: _vaultClosed,
         runTimestamp: runTimestamp.toNumber(),
         stopTimestamp: stopTimestamp.toNumber(),
@@ -503,6 +520,91 @@ export class VaultService {
   }
 
   // ============================================================================
+  // EVM WALLET OPERATIONS
+  // ============================================================================
+
+  /**
+   * Approve token spending using EVM wallet
+   */
+  private async approveTokenEVM(tokenAddress: string, spenderAddress: string, amount: number): Promise<any> {
+    try {
+      if (!this.config.evmSigner) {
+        throw new Error('EVM signer not configured');
+      }
+
+      const amountSmallest = await toSmallestUnits(amount, tokenAddress);
+      if (amountSmallest <= 0) {
+        throw new Error('Approval amount must be greater than 0');
+      }
+
+      // Create token contract instance
+      const tokenContract = new ethers.Contract(
+        tokenAddress,
+        ['function approve(address spender, uint256 amount) returns (bool)'],
+        this.config.evmSigner
+      );
+
+      // Execute approval transaction
+      const tx = await tokenContract.approve(spenderAddress, amountSmallest);
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      
+      return {
+        transactionId: tx.hash,
+        transactionHash: tx.hash,
+        receipt,
+        success: true
+      };
+    } catch (error) {
+      console.error('❌ Error approving token with EVM wallet:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Deposit into vault using EVM wallet
+   */
+  private async depositEVM(amount: number): Promise<any> {
+    try {
+      if (!this.config.evmSigner) {
+        throw new Error('EVM signer not configured');
+      }
+
+      if (!this.config.vaultAddress) {
+        throw new Error('Vault address not configured');
+      }
+
+      // Get token1 address for conversion
+      const token1Address = await this.getToken1Address();
+      const amountSmallest = await toSmallestUnits(amount, token1Address);
+
+      // Create vault contract instance
+      const vaultContract = new ethers.Contract(
+        this.config.vaultAddress,
+        VAULT_ABI_ETHERS,
+        this.config.evmSigner
+      );
+
+      // Execute deposit transaction
+      const tx = await vaultContract.deposit(amountSmallest);
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      
+      return {
+        transactionId: tx.hash,
+        transactionHash: tx.hash,
+        receipt,
+        success: true
+      };
+    } catch (error) {
+      console.error('❌ Error depositing with EVM wallet:', error);
+      throw error;
+    }
+  }
+
+  // ============================================================================
   // TRANSACTION OPERATIONS
   // ============================================================================
 
@@ -601,34 +703,40 @@ export class VaultService {
   }
 
   /**
-   * Approve token spending
+   * Approve token spending (supports both HashPack and EVM wallets)
    */
   async approveToken(tokenAddress: string, spenderAddress: string, amount: number): Promise<TransactionResponse> {
     try {
-      await this.ensureProvider();
-      
-      const amountSmallest = await toSmallestUnits(amount, tokenAddress);
-      if (amountSmallest <= 0) {
-        throw new Error('Approval amount must be greater than 0');
-      }
-      
-      const evmSpenderAddress = await contractIdToEvmAliasAddress(spenderAddress);
-      
-      const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
-      
-      const params = new ContractFunctionParameters()
-        .addAddress(evmSpenderAddress)
-        .addUint256(amountSmallest);
-      
-      const transaction = new ContractExecuteTransaction()
-        .setContractId(this.config.vaultContractId)
-        .setGas(500000)
-        .setFunction(TOKEN_ABI.approve, params);
+      // Determine wallet type and route to appropriate implementation
+      if (this.config.walletType === 'evm') {
+        return await this.approveTokenEVM(tokenAddress, spenderAddress, amount);
+      } else {
+        // Default to HashPack (Hedera SDK)
+        await this.ensureProvider();
+        
+        const amountSmallest = await toSmallestUnits(amount, tokenAddress);
+        if (amountSmallest <= 0) {
+          throw new Error('Approval amount must be greater than 0');
+        }
+        
+        const evmSpenderAddress = await contractIdToEvmAliasAddress(spenderAddress);
+        
+        const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
+        
+        const params = new ContractFunctionParameters()
+          .addAddress(evmSpenderAddress)
+          .addUint256(amountSmallest);
+        
+        const transaction = new ContractExecuteTransaction()
+          .setContractId(this.config.vaultContractId)
+          .setGas(500000)
+          .setFunction(TOKEN_ABI.approve, params);
 
-      const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
-      const response = await frozenTransaction.executeWithSigner(this.config.signer);
-      
-      return response;
+        const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
+        const response = await frozenTransaction.executeWithSigner(this.config.signer);
+        
+        return response;
+      }
     } catch (error) {
       console.error('❌ Error approving token:', error);
       throw error;
@@ -636,34 +744,40 @@ export class VaultService {
   }
 
   /**
-   * Deposit into vault
+   * Deposit into vault (supports both HashPack and EVM wallets)
    */
   async deposit(amount: number): Promise<TransactionResponse> {
     try {
-      await this.ensureProvider();
-      
-      if (!this.config.vaultContractId) {
-        throw new Error('Vault contract not initialized');
+      // Determine wallet type and route to appropriate implementation
+      if (this.config.walletType === 'evm') {
+        return await this.depositEVM(amount);
+      } else {
+        // Default to HashPack (Hedera SDK)
+        await this.ensureProvider();
+        
+        if (!this.config.vaultContractId) {
+          throw new Error('Vault contract not initialized');
+        }
+
+        // Get token1 address for conversion
+        const token1Address = await this.getToken1Address();
+        const amountSmallest = await toSmallestUnits(amount, token1Address);
+        
+        const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
+        
+        const params = new ContractFunctionParameters()
+          .addUint256(amountSmallest);
+        
+        const transaction = new ContractExecuteTransaction()
+          .setContractId(this.config.vaultContractId)
+          .setGas(500000)
+          .setFunction('deposit', params);
+
+        const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
+        const response = await frozenTransaction.executeWithSigner(this.config.signer);
+        
+        return response;
       }
-
-      // Get token1 address for conversion
-      const token1Address = await this.getToken1Address();
-      const amountSmallest = await toSmallestUnits(amount, token1Address);
-      
-      const { ContractExecuteTransaction, ContractFunctionParameters } = await import('@hashgraph/sdk');
-      
-      const params = new ContractFunctionParameters()
-        .addUint256(amountSmallest);
-      
-      const transaction = new ContractExecuteTransaction()
-        .setContractId(this.config.vaultContractId)
-        .setGas(500000)
-        .setFunction('deposit', params);
-
-      const frozenTransaction = await transaction.freezeWithSigner(this.config.signer);
-      const response = await frozenTransaction.executeWithSigner(this.config.signer);
-      
-      return response;
     } catch (error) {
       console.error('❌ Error depositing:', error);
       throw error;
@@ -761,67 +875,9 @@ export class VaultService {
     }
   }
 
-  /**
-   * Calculate withdrawal amount for given shares
-   */
-  async calculateWithdrawalAmount(shareAmount: number): Promise<{ success: boolean; data: number; error?: string }> {
-    try {
-      if (!this.config.vaultContractId) {
-        throw new Error('Vault contract not initialized');
-      }
-
-      const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
-      const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
-      
-      const withdrawalAmount = await vaultContract.calculateWithdrawalAmount(shareAmount);
-      const value = withdrawalAmount.toNumber ? withdrawalAmount.toNumber() : Number(withdrawalAmount);
-      
-      return { success: true, data: value };
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error('❌ Error calculating withdrawal amount:', errorMsg);
-      return { success: false, data: 0, error: errorMsg };
-    }
-  }
-
   // ============================================================================
   // UTILITY & FORMATTING FUNCTIONS
   // ============================================================================
-
-  /**
-   * Check withdrawal status
-   */
-  async checkWithdrawStatus(vaultAddress: string): Promise<WithdrawStatus> {
-    try {
-      if (!this.config.vaultContractId) {
-        throw new Error('Contract not initialized');
-      }
-
-      const vaultState = await this.getVaultInfo(vaultAddress);
-      
-      if (vaultState.withdrawalsEnabled) {
-        return {
-          canWithdraw: true,
-          isProcessing: false,
-          message: 'Withdrawals are now enabled. You can withdraw your funds.',
-        };
-      } else {
-        return {
-          canWithdraw: false,
-          isProcessing: false,
-          message: 'You need to wait until withdrawals are enabled.',
-        };
-      }
-    } catch (error) {
-      console.error('Error checking withdraw status:', error);
-      return {
-        canWithdraw: false,
-        isProcessing: false,
-        message: 'Error checking withdraw status',
-      };
-    }
-  }
-
   /**
    * Format amount as currency
    */

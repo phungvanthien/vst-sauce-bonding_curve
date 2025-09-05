@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
-import { useHashConnect } from "./HashConnectContext";
-import { HashConnectConnectionState } from "hashconnect";
+import { useWallet, WalletType } from "./WalletContext";
 
 type User = {
   walletAddress: string;
-  accountId: string; // Thêm accountId cho Hedera
+  accountId?: string; // Optional for EVM wallets
   sessionId: string;
   totalCapital: number;
   bridgedCapital: number;
@@ -14,14 +13,14 @@ type User = {
   accurateSignals: number;
   accurateRate: number;
   isActive: boolean;
-  walletType: "hashpack"; // Only HashPack wallet supported
+  walletType: WalletType;
 };
 
 type AuthContextType = {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (walletAddress: string, walletType: "hashpack") => Promise<void>;
+  login: (walletAddress: string, walletType: WalletType) => Promise<void>;
   logout: () => void;
   toggleAgentStatus: () => Promise<void>;
   refreshUserData: () => Promise<void>;
@@ -38,7 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { connectionState, pairingData } = useHashConnect();
+  const { walletInfo, disconnect } = useWallet();
 
   useEffect(() => {
     // Check for existing session on mount
@@ -48,9 +47,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const walletAddress = localStorage.getItem("cyrus_wallet_address");
         const walletType = localStorage.getItem(
           "cyrus_wallet_type"
-        ) as "hashpack";
+        ) as WalletType;
 
-        if (!sessionId || !walletAddress) {
+        if (!sessionId || !walletAddress || !walletType) {
           setIsLoading(false);
           return;
         }
@@ -60,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         setUser({
           walletAddress,
-          accountId: pairingData?.accountIds[0] || walletAddress, // Sử dụng accountId cho Hedera
+          accountId: walletType === "hashpack" ? walletAddress : undefined,
           sessionId,
           totalCapital: 5000,
           bridgedCapital: 1500,
@@ -82,15 +81,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     checkSession();
-  }, [pairingData]);
+  }, []);
 
-  // Auto-login when HashPack is connected
-  // useEffect(() => {
-  //   if (connectionState === HashConnectConnectionState.Paired && pairingData && !user) {
-  //     const accountId = pairingData.accountIds[0];
-  //     login(accountId, 'hashpack');
-  //   }
-  // }, [connectionState, pairingData, user]);
+  // Auto-login when wallet is connected
+  useEffect(() => {
+    if (walletInfo?.isConnected && !user) {
+      const walletAddress =
+        walletInfo.type === "hashpack"
+          ? walletInfo.accountId!
+          : walletInfo.address;
+      login(walletAddress, walletInfo.type);
+    }
+  }, [walletInfo, user]);
 
   const refreshUserData = async () => {
     if (!user?.sessionId) {
@@ -124,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const login = async (walletAddress: string, walletType: "hashpack") => {
+  const login = async (walletAddress: string, walletType: WalletType) => {
     try {
       setIsLoading(true);
 
@@ -142,7 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // Set the user state
       setUser({
         walletAddress,
-        accountId: pairingData?.accountIds[0] || walletAddress,
+        accountId: walletType === "hashpack" ? walletAddress : undefined,
         sessionId,
         totalCapital: 25000,
         bridgedCapital: 15000,
@@ -173,9 +175,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const logout = () => {
+    // Disconnect the wallet first (handles both HashPack and EVM)
+    if (walletInfo?.type === "evm") {
+      disconnect();
+    }
+
+    // Clear local storage
     localStorage.removeItem("cyrus_session_id");
     localStorage.removeItem("cyrus_wallet_address");
     localStorage.removeItem("cyrus_wallet_type");
+
+    // Clear user state
     setUser(null);
   };
 

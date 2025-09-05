@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Wallet, LogOut, Loader2 } from "lucide-react";
-import { useHashConnect } from "@/contexts/HashConnectContext";
-import { useAuth } from "@/contexts/AuthContext";
+import { useWallet } from "@/contexts/WalletContext";
 import { HashConnectConnectionState } from "hashconnect";
 import { toast } from "@/hooks/use-toast";
 
@@ -16,18 +15,10 @@ import { toast } from "@/hooks/use-toast";
  * - Disconnect button to remove wallet connection
  * - Loading states during connection attempts
  * - Account ID display when connected
- * - Integration with authentication system
+ * - Integration with unified wallet system
  */
 export function HashPackConnect() {
-  const {
-    connectionState,
-    pairingData,
-    isConnecting,
-    isAutoConnecting,
-    connect,
-    disconnect,
-  } = useHashConnect();
-  const { login, user } = useAuth();
+  const { walletInfo, connectHashPack, disconnect } = useWallet();
 
   /**
    * Handles manual wallet connection
@@ -35,7 +26,7 @@ export function HashPackConnect() {
    */
   const handleConnect = async () => {
     try {
-      await connect();
+      await connectHashPack();
     } catch (error) {
       console.error("❌ HashPackConnect: Failed to connect:", error);
       toast({
@@ -43,24 +34,6 @@ export function HashPackConnect() {
         description: "Failed to connect to HashPack wallet",
         variant: "destructive",
       });
-    }
-  };
-
-  /**
-   * Handles login after successful connection
-   */
-  const handleLogin = async () => {
-    if (pairingData && pairingData.accountIds[0]) {
-      try {
-        await login(pairingData.accountIds[0], "hashpack");
-      } catch (error) {
-        console.error("Login failed:", error);
-        toast({
-          title: "Login Failed",
-          description: "Failed to login with HashPack wallet",
-          variant: "destructive",
-        });
-      }
     }
   };
 
@@ -87,18 +60,12 @@ export function HashPackConnect() {
     }
   };
 
-  // Connection state checks
-  const isPaired = connectionState === HashConnectConnectionState.Paired;
-  const isConnected = connectionState === HashConnectConnectionState.Connected;
-  const isLoading =
-    isConnecting ||
-    isAutoConnecting ||
-    connectionState === HashConnectConnectionState.Connecting;
+  // Check if HashPack is connected
+  const isHashPackConnected =
+    walletInfo?.type === "hashpack" && walletInfo?.isConnected;
 
-  // Show account info when paired with wallet
-  if (isPaired && pairingData) {
-    const accountId = pairingData.accountIds[0];
-
+  // Show account info when connected
+  if (isHashPackConnected && walletInfo) {
     return (
       <div className="flex items-center gap-2">
         {/* Connected account display */}
@@ -108,19 +75,8 @@ export function HashPackConnect() {
           className="text-green-500 border-green-500/50"
         >
           <Wallet className="h-4 w-4 mr-2" />
-          {accountId}
+          {walletInfo.accountId}
         </Button>
-        {/* Login button if not authenticated */}
-        {!user && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleLogin}
-            className="text-cyrus-accent hover:bg-cyrus-accent/10"
-          >
-            Login
-          </Button>
-        )}
         {/* Disconnect button */}
         <Button
           variant="ghost"
@@ -131,19 +87,6 @@ export function HashPackConnect() {
           <LogOut className="h-4 w-4" />
         </Button>
       </div>
-    );
-  }
-
-  // Show loading state during connection attempts
-  if (isLoading) {
-    const loadingText = isAutoConnecting
-      ? "Auto-connecting..."
-      : "Connecting...";
-    return (
-      <Button variant="outline" size="sm" disabled>
-        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-        {loadingText}
-      </Button>
     );
   }
 

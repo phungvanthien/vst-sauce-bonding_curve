@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWallet } from "@/contexts/WalletContext";
 import {
   LayoutDashboard,
   BellElectric,
@@ -47,6 +48,7 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, logout, user } = useAuth();
+  const { walletInfo } = useWallet();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -165,8 +167,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             ))}
           </nav>
         </div>
-
-
       </div>
     </div>
   );
@@ -191,8 +191,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </button>
             )}
             <h1 className="text-lg font-medium">
-              {sidebarLinks.find((link) => link.to === location.pathname)?.text ||
-                "Vistia TA Signals Dashboard"}
+              {sidebarLinks.find((link) => link.to === location.pathname)
+                ?.text || "Vistia TA Signals Dashboard"}
             </h1>
           </div>
 
@@ -200,13 +200,27 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="flex items-center gap-3">
             <div className="overflow-hidden rounded-md bg-cyrus-card/60 p-3 hover-lift">
               <div className="text-xs text-cyrus-textSecondary">
-                Connected Wallet ({user?.walletType || 'Unknown'})
+                Connected Wallet (
+                {walletInfo?.type || user?.walletType || "Unknown"})
               </div>
               <div className="mt-1 truncate text-sm font-mono">
-                {user?.walletType === 'hashpack' 
+                {walletInfo?.type === "hashpack"
+                  ? `${walletInfo?.accountId}`
+                  : walletInfo?.type === "evm"
+                  ? `${walletInfo?.address?.substring(
+                      0,
+                      8
+                    )}...${walletInfo?.address?.substring(
+                      walletInfo.address.length - 6
+                    )}`
+                  : user?.walletType === "hashpack"
                   ? `${user?.accountId}`
-                  : `${user?.walletAddress?.substring(0, 8)}...${user?.walletAddress?.substring(user.walletAddress.length - 8)}`
-                }
+                  : `${user?.walletAddress?.substring(
+                      0,
+                      8
+                    )}...${user?.walletAddress?.substring(
+                      user.walletAddress.length - 6
+                    )}`}
               </div>
             </div>
 

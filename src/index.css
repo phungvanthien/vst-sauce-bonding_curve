@@ -129,6 +129,20 @@
   .hover-glow:hover {
     @apply shadow-[0_0_15px_rgba(0,230,118,0.3)];
   }
+
+  /* RainbowKit Connect Button Border Override */
+  [data-rk] button[data-testid="rk-connect-button"] {
+    border: 1px solid #292929 !important;
+    border-radius: 0.5rem !important;
+    background-color: #121212 !important;
+    color: #F7F7F7 !important;
+    transition: all 0.3s ease !important;
+  }
+
+  [data-rk] button[data-testid="rk-connect-button"]:hover {
+    color: #00E676 !important;
+    border-color: #00E676 !important;
+  }
 }
 
 /* Custom animations */

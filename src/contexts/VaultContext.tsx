@@ -12,7 +12,6 @@ import {
   VaultState,
   TraderInfo,
   Transaction,
-  WithdrawStatus,
 } from "@/services/vaultService";
 import {
   Vault,
@@ -37,7 +36,6 @@ interface VaultContextType {
   vaultStates: Record<string, VaultState>;
   topTraders: TraderInfo[];
   transactionHistory: Transaction[];
-  withdrawStatus: WithdrawStatus | null;
 
   // Operations
   loadVaultData: (userAddress: string) => Promise<void>;
@@ -46,13 +44,15 @@ interface VaultContextType {
   loadTransactionHistory: (userAddress: string) => Promise<void>;
   deposit: (amount: number, userAddress: string) => Promise<void>;
   approveToken: (amount: number, userAddress: string) => Promise<boolean>;
-  checkWithdrawStatus: () => Promise<void>;
 
   // User-specific vault service instance
   getUserVaultService: () => Promise<VaultService | null>;
 
   // HashConnect integration
   setHashConnectData: (manager: any, pairingData: any) => void;
+
+  // EVM wallet integration
+  setEVMSigner: (evmSigner: any) => void;
 
   // Vault info retrieval
   callGetVaultInfo: (vaultAddress: string) => Promise<VaultState | null>;
@@ -75,9 +75,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   const [topTraders, setTopTraders] = useState<TraderInfo[]>([]);
   const [transactionHistory, setTransactionHistory] = useState<Transaction[]>(
     []
-  );
-  const [withdrawStatus, setWithdrawStatus] = useState<WithdrawStatus | null>(
-    null
   );
 
   // Single vault service instance for the context
@@ -138,6 +135,16 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
     (manager: any, pairingData: any) => {
       if (vaultService) {
         vaultService.setManagerAndPairingData(manager, pairingData);
+      }
+    },
+    [vaultService]
+  );
+
+  // Set EVM signer for vault service
+  const setEVMSigner = useCallback(
+    (evmSigner: any) => {
+      if (vaultService) {
+        vaultService.setEVMSigner(evmSigner);
       }
     },
     [vaultService]
@@ -435,7 +442,7 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         // Execute deposit via HashConnect
         toast({
           title: "Processing deposit",
-          description: "Please confirm transactions in HashPack wallet",
+          description: "Please confirm transactions in your wallet",
         });
 
         const depositResult = await vaultService.deposit(amount);
@@ -475,33 +482,6 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
     ]
   );
 
-  // Check withdraw status
-  const checkWithdrawStatus = useCallback(
-    async (userAddress?: string) => {
-      if (!selectedVault) return;
-
-      try {
-        const vaultService = await getUserVaultService();
-        if (!vaultService) {
-          throw new Error("Vault service not available");
-        }
-
-        const status = await vaultService.checkWithdrawStatus(
-          selectedVault.vaultAddress
-        );
-        setWithdrawStatus(status);
-      } catch (error) {
-        console.error("[VaultContext] Error checking withdraw status:", error);
-        setWithdrawStatus({
-          canWithdraw: false,
-          isProcessing: false,
-          message: "Error checking withdraw status",
-        });
-      }
-    },
-    [selectedVault, getUserVaultService]
-  );
-
   return (
     <VaultContext.Provider
       value={{
@@ -513,16 +493,15 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
         vaultStates,
         topTraders,
         transactionHistory,
-        withdrawStatus,
         loadVaultData,
         loadUserData,
         loadTopTraders,
         loadTransactionHistory,
         deposit,
         approveToken,
-        checkWithdrawStatus,
         getUserVaultService,
         setHashConnectData,
+        setEVMSigner,
         callGetVaultInfo,
       }}
     >
