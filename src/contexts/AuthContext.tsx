@@ -83,14 +83,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     checkSession();
   }, []);
 
-  // Auto-login when wallet is connected
+  // Auto-login when wallet is paired (not just connected)
   useEffect(() => {
     if (walletInfo?.isConnected && !user) {
-      const walletAddress =
-        walletInfo.type === "hashpack"
-          ? walletInfo.accountId!
-          : walletInfo.address;
-      login(walletAddress, walletInfo.type);
+      // For HashPack, only auto-login if we have pairing data (truly paired)
+      if (walletInfo.type === "hashpack" && walletInfo.pairingData) {
+        const walletAddress = walletInfo.accountId!;
+        login(walletAddress, walletInfo.type);
+      }
+      // For EVM wallets, auto-login when connected (they don't have pairing concept)
+      else if (walletInfo.type === "evm") {
+        const walletAddress = walletInfo.address;
+        login(walletAddress, walletInfo.type);
+      }
     }
   }, [walletInfo, user]);
 
@@ -176,9 +181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = () => {
     // Disconnect the wallet first (handles both HashPack and EVM)
-    if (walletInfo?.type === "evm") {
-      disconnect();
-    }
+    disconnect();
 
     // Clear local storage
     localStorage.removeItem("cyrus_session_id");
