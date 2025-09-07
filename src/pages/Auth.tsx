@@ -12,7 +12,7 @@ const Auth = () => {
   const [isConnecting, setIsConnecting] = useState(false);
 
   if (isAuthenticated && !isLoading) {
-    return <Navigate to="/portfolio" replace />;
+    return <Navigate to="/vault" replace />;
   }
 
   return (
