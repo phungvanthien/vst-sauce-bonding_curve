@@ -10,7 +10,7 @@ export const VAULTS_CONFIG = {
       vaultAddress: "0xEA316d96F85e662aa7e213A900A87dbDDfCbE99a",
       apy: 15.0,
       riskLevel: "Medium",
-      maxShareholders: 50,
+      maxShareholders: 500,
     },
     {
       id: 2,
