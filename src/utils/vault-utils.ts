@@ -101,13 +101,8 @@ export function validateVaultForWithdraw(vault: Vault): void {
 }
 
 // Format vault data for display
-export function formatVaultAmount(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+export function formatVaultAmount(amount: number, token?: string): string {
+  return `${amount} ${token ? token : ''}`;
 }
 
 export function formatTimestamp(timestamp: number): string {

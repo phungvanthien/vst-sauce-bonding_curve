@@ -477,7 +477,7 @@ const Vault: React.FC = () => {
                       Total Deposits
                     </span>
                     <span className="font-medium">
-                      {formatVaultAmount(vault.totalDeposits)}
+                      {formatVaultAmount(vault.totalDeposits, vault.token)}
                     </span>
                   </div>
 
@@ -750,7 +750,10 @@ const Vault: React.FC = () => {
                             Total Deposits:
                           </span>
                           <span className="font-medium">
-                            {formatVaultAmount(selectedVault.totalDeposits)}
+                            {formatVaultAmount(
+                              selectedVault.totalDeposits,
+                              selectedVault.token
+                            )}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -774,7 +777,10 @@ const Vault: React.FC = () => {
                             Your Total Deposited:
                           </span>
                           <span className="font-medium text-green-500">
-                            {formatVaultAmount(userTotalDeposited)}
+                            {formatVaultAmount(
+                              userTotalDeposited,
+                              selectedVault.token
+                            )}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -867,7 +873,10 @@ const Vault: React.FC = () => {
                             Total Value Locked
                           </div>
                           <div className="text-xl font-bold">
-                            {formatVaultAmount(selectedVault.totalDeposits)}
+                            {formatVaultAmount(
+                              selectedVault.totalDeposits,
+                              selectedVault.token
+                            )}
                           </div>
                         </div>
                         <div className="p-3 bg-cyrus-card/60 rounded-lg">
@@ -875,7 +884,10 @@ const Vault: React.FC = () => {
                             Your Position
                           </div>
                           <div className="text-xl font-bold text-green-500">
-                            {formatVaultAmount(userTotalDeposited)}
+                            {formatVaultAmount(
+                              userTotalDeposited,
+                              selectedVault.token
+                            )}
                           </div>
                         </div>
                         <div className="p-3 bg-cyrus-card/60 rounded-lg">
