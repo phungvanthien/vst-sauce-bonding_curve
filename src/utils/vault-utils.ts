@@ -2,6 +2,20 @@ import { TraderInfo, Transaction, VaultState } from '@/services/vaultService';
 import { VAULTS_CONFIG } from '@/config/hederaConfig';
 import { getTokenSymbolFromAddress } from '@/config/tokenAddress';
 
+export interface DepositTransaction {
+  user_address: string;
+  amount: number;
+  timestamp: number;
+  hash: string;
+}
+
+export interface DepositTransactionsResponse {
+  transactions: DepositTransaction[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export interface Vault {
   id: number;
   name: string;
@@ -191,4 +205,60 @@ export function updateVaultAfterDeposit(vault: Vault, amount: number, newShares:
     totalShares: vault.totalShares + newShares,
     shareholderCount: vault.shareholderCount + (isNewShareholder ? 1 : 0)
   };
+}
+
+// Get token logo URL
+export function getTokenLogoUrl(tokenSymbol: string): string {
+  return `/tokens/${tokenSymbol.toLowerCase()}.png`;
+}
+
+// Fetch deposit transactions from API
+export async function fetchDepositTransactions(
+  vaultId: number,
+  offset: number = 0,
+  limit: number = 10
+): Promise<DepositTransactionsResponse> {
+  try {
+    const baseUrl = import.meta.env.VITE_VISTIA_BASE_URL;
+    console.log('[vault-utils] Base URL:', baseUrl);
+    
+    if (!baseUrl) {
+      throw new Error('[vault-utils] Base URL is not defined');
+    }
+
+    // Construct the URL with path parameter and query parameters
+    // Ensure baseUrl ends with '/' and append the endpoint path
+    const baseUrlWithSlash = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const url = new URL(`vault/${vaultId}/deposits`, baseUrlWithSlash);
+    url.searchParams.append('offset', offset.toString());
+    url.searchParams.append('limit', limit.toString());
+
+    console.log('[vault-utils] Fetching deposit transactions from:', url.toString());
+    const response = await fetch(url.toString());
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    // API returns an array of transactions directly
+    const transactions: DepositTransaction[] = await response.json();
+    
+    // Validate the response structure
+    if (!Array.isArray(transactions)) {
+      throw new Error('Invalid response format: expected array of transactions');
+    }
+
+    // Create the response object with the expected structure
+    const data: DepositTransactionsResponse = {
+      transactions,
+      total: transactions.length, // Note: This might need to be adjusted based on actual API response
+      offset,
+      limit
+    };
+
+    return data;
+  } catch (error) {
+    console.error('Error fetching deposit transactions:', error);
+    throw error;
+  }
 }

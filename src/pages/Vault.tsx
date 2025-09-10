@@ -13,6 +13,21 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -31,6 +46,8 @@ import {
   ExternalLink,
   Copy,
   EyeOff,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWallet } from "@/contexts/WalletContext";
@@ -49,6 +66,9 @@ import {
   getTimeRemaining,
   formatRelativeTime,
   getVaultStatus,
+  fetchDepositTransactions,
+  DepositTransaction,
+  getTokenLogoUrl,
 } from "@/utils/vault-utils";
 import { VAULTS_CONFIG } from "@/config/hederaConfig";
 import {
@@ -86,6 +106,67 @@ const Vault: React.FC = () => {
   // Loading states moved from VaultContext
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingVaultData, setIsLoadingVaultData] = useState(false);
+
+  // Deposit transactions table state
+  const [depositTransactions, setDepositTransactions] = useState<
+    DepositTransaction[]
+  >([]);
+  const [allDepositTransactions, setAllDepositTransactions] = useState<
+    DepositTransaction[]
+  >([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [isLoadingDepositTransactions, setIsLoadingDepositTransactions] =
+    useState(false);
+
+  // Load deposit transactions for the selected vault
+  const loadDepositTransactions = useCallback(async () => {
+    if (!selectedVault || selectedVault.name === "Coming Soon...") {
+      setAllDepositTransactions([]);
+      setDepositTransactions([]);
+      setTotalTransactions(0);
+      return;
+    }
+
+    setIsLoadingDepositTransactions(true);
+    try {
+      // Fetch deposit transactions from API
+      const response = await fetchDepositTransactions(
+        selectedVault.id,
+        0, // offset - start from beginning
+        1000 // limit - fetch a large number to get all transactions for now
+      );
+
+      setAllDepositTransactions(response.transactions);
+      setTotalTransactions(response.total);
+    } catch (error) {
+      console.error("Error loading deposit transactions:", error);
+      setAllDepositTransactions([]);
+      setDepositTransactions([]);
+      setTotalTransactions(0);
+
+      // Show error toast to user
+      toast({
+        title: "Error",
+        description: "Failed to load deposit transactions",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingDepositTransactions(false);
+    }
+  }, [selectedVault]);
+
+  // Handle pagination for deposit transactions
+  useEffect(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedTransactions = allDepositTransactions.slice(
+      startIndex,
+      endIndex
+    );
+    setDepositTransactions(paginatedTransactions);
+  }, [allDepositTransactions, currentPage, pageSize]);
 
   // Load token balance from account
   const loadUserTokenBalance = useCallback(async () => {
@@ -176,6 +257,7 @@ const Vault: React.FC = () => {
         loadTopTraders();
         loadTransactionHistory(userAddress);
         loadUserTokenBalance(); // Reload balance when vault changes
+        loadDepositTransactions(); // Load deposit transactions
 
         // Also call getVaultInfo when vault is selected
         if (selectedVault.name !== "Coming Soon...") {
@@ -191,6 +273,7 @@ const Vault: React.FC = () => {
     loadTransactionHistory,
     callGetVaultInfo,
     loadUserTokenBalance,
+    loadDepositTransactions,
   ]);
 
   // Xử lý deposit - tự động approve token
@@ -411,8 +494,8 @@ const Vault: React.FC = () => {
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="vaults">Available Vaults</TabsTrigger>
           <TabsTrigger value="my-vaults">My Vaults</TabsTrigger>
-          <TabsTrigger value="traders">Top Traders</TabsTrigger>
-          <TabsTrigger value="transactions">Recent Transactions</TabsTrigger>
+          <TabsTrigger value="traders">Top Holders</TabsTrigger>
+          <TabsTrigger value="transactions">Deposit Transactions</TabsTrigger>
         </TabsList>
 
         {/* Vault List */}
@@ -476,9 +559,34 @@ const Vault: React.FC = () => {
                     <span className="text-sm text-cyrus-textSecondary">
                       Total Deposits
                     </span>
-                    <span className="font-medium">
-                      {formatVaultAmount(vault.totalDeposits, vault.token)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">
+                        {formatVaultAmount(vault.totalDeposits, vault.token)}
+                      </span>
+                      <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center bg-gray-100">
+                        <img
+                          src={getTokenLogoUrl(vault.token)}
+                          alt={vault.token}
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            // Fallback to letter if image fails to load
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = "none";
+                            const fallback =
+                              target.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = "flex";
+                          }}
+                        />
+                        <div
+                          className="w-4 h-4 bg-cyrus-accent rounded-full flex items-center justify-center"
+                          style={{ display: "none" }}
+                        >
+                          <span className="text-xs font-bold text-white">
+                            {vault.token.charAt(0)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Shareholders */}
@@ -956,160 +1064,423 @@ const Vault: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="traders" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Traders</CardTitle>
-              <CardDescription>Leading investors in this vault</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Rank</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Shares</TableHead>
-                    <TableHead>Total Deposited</TableHead>
-                    <TableHead>Transactions</TableHead>
-                    <TableHead>Last Activity</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topTraders.map((trader, index) => (
-                    <TableRow key={trader.address}>
-                      <TableCell className="font-medium">
-                        #{index + 1}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">
-                            {formatUserAddress(trader.address)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(trader.address)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>{trader.shares.toLocaleString()}</TableCell>
-                      <TableCell>
-                        {formatVaultAmount(trader.totalDeposited)}
-                      </TableCell>
-                      <TableCell>{trader.transactionCount}</TableCell>
-                      <TableCell>
-                        {formatRelativeTime(trader.lastTransaction)}
-                      </TableCell>
+          {selectedVault && selectedVault.name !== "Coming Soon..." ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Holders</CardTitle>
+                <CardDescription>
+                  Top 10 holders by amount deposited in this vault
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Rank</TableHead>
+                      <TableHead>Address</TableHead>
+                      <TableHead>Shares</TableHead>
+                      <TableHead>Total Deposited</TableHead>
+                      <TableHead>Percentage</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {topTraders.length > 0 ? (
+                      topTraders.slice(0, 10).map((holder, index) => (
+                        <TableRow key={holder.address}>
+                          <TableCell className="font-medium">
+                            #{index + 1}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm">
+                                {formatUserAddress(holder.address)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => copyToClipboard(holder.address)}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {holder.shares.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            {formatVaultAmount(
+                              holder.totalDeposited,
+                              selectedVault.token
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {selectedVault.totalDeposits > 0
+                              ? (
+                                  (holder.totalDeposited /
+                                    selectedVault.totalDeposits) *
+                                  100
+                                ).toFixed(2) + "%"
+                              : "0.00%"}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8">
+                          <div className="flex flex-col items-center gap-2">
+                            <Users className="h-8 w-8 text-cyrus-textSecondary opacity-50" />
+                            <p className="text-cyrus-textSecondary">
+                              No holders found
+                            </p>
+                            <p className="text-sm text-cyrus-textSecondary">
+                              Holders will appear here once users start
+                              depositing
+                            </p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Users className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-600 mb-2">
+                    No Vault Selected
+                  </h4>
+                  <p className="text-sm text-gray-500">
+                    Please select a vault to view top holders.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="transactions" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Transactions</CardTitle>
-              <CardDescription>
-                Latest 5 transactions in this vault
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>From</TableHead>
-                    <TableHead>To</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Hash</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactionHistory.map((tx) => (
-                    <TableRow key={tx.hash}>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            tx.type === "deposit" ? "default" : "secondary"
-                          }
-                          className={
-                            tx.type === "deposit"
-                              ? "bg-green-500"
-                              : "bg-red-500"
-                          }
-                        >
-                          {tx.type === "deposit" ? "Deposit" : "Withdraw"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">
-                            {formatUserAddress(tx.from)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(tx.from)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">
-                            {formatUserAddress(tx.to)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(tx.to)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {formatVaultAmount(parseFloat(tx.value))}
-                      </TableCell>
-                      <TableCell>{formatRelativeTime(tx.timestamp)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">
-                            {formatHash(tx.hash)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(tx.hash)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              window.open(
-                                `https://etherscan.io/tx/${tx.hash}`,
-                                "_blank"
-                              )
+          {/* Deposit Transactions Table */}
+          {selectedVault && selectedVault.name !== "Coming Soon..." ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Deposit Transactions
+                    </CardTitle>
+                    <CardDescription>
+                      Recent deposit transactions for this vault
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadDepositTransactions}
+                    disabled={isLoadingDepositTransactions}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4 ${
+                        isLoadingDepositTransactions ? "animate-spin" : ""
+                      }`}
+                    />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Page Size Selector */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-cyrus-textSecondary">
+                      Show:
+                    </span>
+                    <Select
+                      value={pageSize.toString()}
+                      onValueChange={(value) => {
+                        setPageSize(Number(value));
+                        setCurrentPage(1); // Reset to first page when changing page size
+                      }}
+                    >
+                      <SelectTrigger className="w-20">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="25">25</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-cyrus-textSecondary">
+                      entries
+                    </span>
+                  </div>
+                  <div className="text-sm text-cyrus-textSecondary">
+                    Showing{" "}
+                    {Math.min(
+                      (currentPage - 1) * pageSize + 1,
+                      totalTransactions
+                    )}{" "}
+                    to {Math.min(currentPage * pageSize, totalTransactions)} of{" "}
+                    {totalTransactions} entries
+                  </div>
+                </div>
+
+                {/* Transactions Table */}
+                <div className="border rounded-lg">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Shareholder</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Token</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoadingDepositTransactions ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-8">
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyrus-accent"></div>
+                              <p className="text-cyrus-textSecondary">
+                                Loading deposit transactions...
+                              </p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : depositTransactions.length > 0 ? (
+                        depositTransactions.map((transaction, index) => (
+                          <TableRow key={index}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-cyrus-textSecondary" />
+                                <span className="text-sm">
+                                  {new Date(
+                                    transaction.timestamp
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm">
+                                  {formatUserAddress(transaction.user_address)}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    copyToClipboard(transaction.user_address)
+                                  }
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-medium">
+                                {transaction.amount.toLocaleString()}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center bg-gray-100">
+                                  <img
+                                    src={getTokenLogoUrl(selectedVault.token)}
+                                    alt={selectedVault.token}
+                                    className="w-full h-full object-contain"
+                                    onError={(e) => {
+                                      // Fallback to letter if image fails to load
+                                      const target =
+                                        e.target as HTMLImageElement;
+                                      target.style.display = "none";
+                                      const fallback =
+                                        target.nextElementSibling as HTMLElement;
+                                      if (fallback)
+                                        fallback.style.display = "flex";
+                                    }}
+                                  />
+                                  <div
+                                    className="w-6 h-6 bg-cyrus-accent rounded-full flex items-center justify-center"
+                                    style={{ display: "none" }}
+                                  >
+                                    <span className="text-xs font-bold text-white">
+                                      {selectedVault.token.charAt(0)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="font-medium">
+                                  {selectedVault.token}
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-8">
+                            <div className="flex flex-col items-center gap-2">
+                              <TrendingUp className="h-8 w-8 text-cyrus-textSecondary opacity-50" />
+                              <p className="text-cyrus-textSecondary">
+                                No deposit transactions found
+                              </p>
+                              <p className="text-sm text-cyrus-textSecondary">
+                                Deposit transactions will appear here once users
+                                start depositing
+                              </p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Pagination */}
+                {totalTransactions > pageSize && (
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-cyrus-textSecondary">
+                      Page {currentPage} of{" "}
+                      {Math.ceil(totalTransactions / pageSize)}
+                    </div>
+                    <Pagination>
+                      <PaginationContent>
+                        {/* First Page Button */}
+                        <PaginationItem>
+                          <PaginationLink
+                            onClick={() => setCurrentPage(1)}
+                            className={
+                              currentPage === 1
+                                ? "pointer-events-none opacity-50"
+                                : "cursor-pointer"
                             }
                           >
-                            <ExternalLink className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                            First
+                          </PaginationLink>
+                        </PaginationItem>
+
+                        <PaginationItem>
+                          <PaginationPrevious
+                            onClick={() =>
+                              setCurrentPage(Math.max(1, currentPage - 1))
+                            }
+                            className={
+                              currentPage === 1
+                                ? "pointer-events-none opacity-50"
+                                : "cursor-pointer"
+                            }
+                          />
+                        </PaginationItem>
+
+                        {/* Page Numbers */}
+                        {(() => {
+                          const totalPages = Math.ceil(
+                            totalTransactions / pageSize
+                          );
+                          const pages = [];
+
+                          // Calculate the 5 page numbers to show
+                          let startPage, endPage;
+
+                          if (currentPage <= 3) {
+                            // At page 1, 2, or 3 - show pages 1-5 (or up to totalPages)
+                            startPage = 1;
+                            endPage = Math.min(5, totalPages);
+                          } else if (currentPage >= totalPages - 2) {
+                            // At last 3 pages - show last 5 pages (or from 1)
+                            startPage = Math.max(1, totalPages - 4);
+                            endPage = totalPages;
+                          } else {
+                            // In the middle - show 2 before, current, 2 after
+                            startPage = currentPage - 2;
+                            endPage = currentPage + 2;
+                          }
+
+                          // Generate page numbers
+                          for (let i = startPage; i <= endPage; i++) {
+                            pages.push(
+                              <PaginationItem key={i}>
+                                <PaginationLink
+                                  onClick={() => setCurrentPage(i)}
+                                  isActive={currentPage === i}
+                                  className="cursor-pointer border-white"
+                                >
+                                  {i}
+                                </PaginationLink>
+                              </PaginationItem>
+                            );
+                          }
+
+                          return pages;
+                        })()}
+
+                        <PaginationItem>
+                          <PaginationNext
+                            onClick={() =>
+                              setCurrentPage(
+                                Math.min(
+                                  Math.ceil(totalTransactions / pageSize),
+                                  currentPage + 1
+                                )
+                              )
+                            }
+                            className={
+                              currentPage ===
+                              Math.ceil(totalTransactions / pageSize)
+                                ? "pointer-events-none opacity-50"
+                                : "cursor-pointer"
+                            }
+                          />
+                        </PaginationItem>
+
+                        {/* Last Page Button */}
+                        <PaginationItem>
+                          <PaginationLink
+                            onClick={() =>
+                              setCurrentPage(
+                                Math.ceil(totalTransactions / pageSize)
+                              )
+                            }
+                            className={
+                              currentPage ===
+                              Math.ceil(totalTransactions / pageSize)
+                                ? "pointer-events-none opacity-50"
+                                : "cursor-pointer"
+                            }
+                          >
+                            Last
+                          </PaginationLink>
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <TrendingUp className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-600 mb-2">
+                    No Vault Selected
+                  </h4>
+                  <p className="text-sm text-gray-500">
+                    Please select a vault to view deposit transactions.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
