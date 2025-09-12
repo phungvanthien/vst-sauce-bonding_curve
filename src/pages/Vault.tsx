@@ -87,7 +87,6 @@ const Vault: React.FC = () => {
     userShares,
     userTotalDeposited,
     topTraders,
-    transactionHistory,
     loadVaultData,
     loadUserData,
     loadTopTraders,
@@ -106,6 +105,7 @@ const Vault: React.FC = () => {
   // Loading states moved from VaultContext
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingVaultData, setIsLoadingVaultData] = useState(false);
+  const [isLoadingTopTraders, setIsLoadingTopTraders] = useState(false);
 
   // Deposit transactions table state
   const [depositTransactions, setDepositTransactions] = useState<
@@ -119,6 +119,27 @@ const Vault: React.FC = () => {
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [isLoadingDepositTransactions, setIsLoadingDepositTransactions] =
     useState(false);
+
+  // Load top traders with loading state
+  const loadTopTradersWithLoading = useCallback(async () => {
+    if (!selectedVault || selectedVault.name === "Coming Soon...") {
+      return;
+    }
+
+    setIsLoadingTopTraders(true);
+    try {
+      await loadTopTraders();
+    } catch (error) {
+      console.error("Error loading top traders:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load top traders",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingTopTraders(false);
+    }
+  }, [selectedVault, loadTopTraders]);
 
   // Load deposit transactions for the selected vault
   const loadDepositTransactions = useCallback(async () => {
@@ -254,7 +275,7 @@ const Vault: React.FC = () => {
       const userAddress = getUserAddress(user);
       if (userAddress) {
         loadUserData(userAddress);
-        loadTopTraders();
+        loadTopTradersWithLoading(); // Use the loading version
         loadTransactionHistory(userAddress);
         loadUserTokenBalance(); // Reload balance when vault changes
         loadDepositTransactions(); // Load deposit transactions
@@ -269,11 +290,33 @@ const Vault: React.FC = () => {
     selectedVault,
     user,
     loadUserData,
-    loadTopTraders,
+    loadTopTradersWithLoading,
     loadTransactionHistory,
     callGetVaultInfo,
     loadUserTokenBalance,
     loadDepositTransactions,
+  ]);
+
+  // Load top traders when vaults are available but topTraders is empty
+  useEffect(() => {
+    if (
+      selectedVault &&
+      selectedVault.name !== "Coming Soon..." &&
+      topTraders.length === 0 &&
+      !isLoadingTopTraders
+    ) {
+      // Small delay to ensure vault data is loaded
+      const timer = setTimeout(() => {
+        loadTopTradersWithLoading();
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [
+    selectedVault,
+    topTraders.length,
+    isLoadingTopTraders,
+    loadTopTradersWithLoading,
   ]);
 
   // Xử lý deposit - tự động approve token
@@ -1067,10 +1110,28 @@ const Vault: React.FC = () => {
           {selectedVault && selectedVault.name !== "Coming Soon..." ? (
             <Card>
               <CardHeader>
-                <CardTitle>Top Holders</CardTitle>
-                <CardDescription>
-                  Top 10 holders by amount deposited in this vault
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Top Holders</CardTitle>
+                    <CardDescription>
+                      Top 10 holders by amount deposited in this vault
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadTopTradersWithLoading}
+                    disabled={isLoadingTopTraders}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4 ${
+                        isLoadingTopTraders ? "animate-spin" : ""
+                      }`}
+                    />
+                    Refresh
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -1084,7 +1145,18 @@ const Vault: React.FC = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {topTraders.length > 0 ? (
+                    {isLoadingTopTraders ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8">
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyrus-accent"></div>
+                            <p className="text-cyrus-textSecondary">
+                              Loading top holders...
+                            </p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : topTraders.length > 0 ? (
                       topTraders.slice(0, 10).map((holder, index) => (
                         <TableRow key={holder.address}>
                           <TableCell className="font-medium">
@@ -1239,6 +1311,7 @@ const Vault: React.FC = () => {
                       <TableRow>
                         <TableHead>Time</TableHead>
                         <TableHead>Shareholder</TableHead>
+                        <TableHead>Transaction Hash</TableHead>
                         <TableHead>Amount</TableHead>
                         <TableHead>Token</TableHead>
                       </TableRow>
@@ -1246,7 +1319,7 @@ const Vault: React.FC = () => {
                     <TableBody>
                       {isLoadingDepositTransactions ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8">
+                          <TableCell colSpan={5} className="text-center py-8">
                             <div className="flex flex-col items-center gap-2">
                               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyrus-accent"></div>
                               <p className="text-cyrus-textSecondary">
@@ -1263,7 +1336,7 @@ const Vault: React.FC = () => {
                                 <Clock className="h-4 w-4 text-cyrus-textSecondary" />
                                 <span className="text-sm">
                                   {new Date(
-                                    transaction.timestamp
+                                    transaction.timestamp * 1000
                                   ).toLocaleString()}
                                 </span>
                               </div>
@@ -1281,6 +1354,34 @@ const Vault: React.FC = () => {
                                   }
                                 >
                                   <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs">
+                                  {formatHash(transaction.hash)}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    copyToClipboard(transaction.hash)
+                                  }
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    window.open(
+                                      `https://hashscan.io/mainnet/transaction/${transaction.hash}`,
+                                      "_blank"
+                                    )
+                                  }
+                                >
+                                  <ExternalLink className="h-3 w-3" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -1325,7 +1426,7 @@ const Vault: React.FC = () => {
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8">
+                          <TableCell colSpan={5} className="text-center py-8">
                             <div className="flex flex-col items-center gap-2">
                               <TrendingUp className="h-8 w-8 text-cyrus-textSecondary opacity-50" />
                               <p className="text-cyrus-textSecondary">

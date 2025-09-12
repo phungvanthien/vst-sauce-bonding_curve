@@ -220,7 +220,6 @@ export async function fetchDepositTransactions(
 ): Promise<DepositTransactionsResponse> {
   try {
     const baseUrl = import.meta.env.VITE_VISTIA_BASE_URL;
-    console.log('[vault-utils] Base URL:', baseUrl);
     
     if (!baseUrl) {
       throw new Error('[vault-utils] Base URL is not defined');
@@ -233,7 +232,6 @@ export async function fetchDepositTransactions(
     url.searchParams.append('offset', offset.toString());
     url.searchParams.append('limit', limit.toString());
 
-    console.log('[vault-utils] Fetching deposit transactions from:', url.toString());
     const response = await fetch(url.toString());
 
     if (!response.ok) {

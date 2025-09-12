@@ -79,6 +79,19 @@ export interface TraderInfo {
   transactionCount: number;
 }
 
+// API response interfaces for shareholders details
+export interface ShareholderDetail {
+  user_address: string;
+  total_amount: number;
+  num_tx: number;
+}
+
+export interface ShareholdersDetailsResponse {
+  total_amount: number;
+  total_num_tx: number;
+  address_details: ShareholderDetail[];
+}
+
 export interface VaultServiceConfig {
   // Network Configuration
   rpcUrl?: string;
@@ -815,9 +828,74 @@ export class VaultService {
   }
 
   /**
-   * Get top traders by shares
+   * Get top traders by shares using API
    */
   async getTopTraders(limit: number = 10): Promise<TraderInfo[]> {
+    try {
+      if (!this.config.vaultContractId) {
+        throw new Error('Vault contract not initialized');
+      }
+
+      // Get vault ID from vaultContractId (assuming it's in format like "0.0.123456")
+      const vaultId = this.config.vaultContractId.split('.').pop();
+      if (!vaultId) {
+        throw new Error('Invalid vault contract ID format');
+      }
+
+      const baseUrl = import.meta.env.VITE_VISTIA_BASE_URL;
+      if (!baseUrl) {
+        throw new Error('VITE_VISTIA_BASE_URL is not defined in environment variables');
+      }
+
+      // Construct the API URL
+      const baseUrlWithSlash = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const url = new URL(`vault/${vaultId}/shareholders/details`, baseUrlWithSlash);
+      url.searchParams.append('limit', '100'); // Get up to 100 shareholders
+
+      console.log('[VaultService] Fetching top traders from API:', url.toString());
+
+      const response = await fetch(url.toString());
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: ShareholdersDetailsResponse = await response.json();
+      
+      // Validate the response structure
+      if (!data.address_details || !Array.isArray(data.address_details)) {
+        throw new Error('Invalid API response format: expected address_details array');
+      }
+
+      // Convert API response to TraderInfo format
+      const traders: TraderInfo[] = data.address_details.map((detail: ShareholderDetail) => ({
+        address: detail.user_address,
+        shares: detail.total_amount, // In this vault, shares = total_amount (1:1 ratio)
+        totalDeposited: detail.total_amount,
+        lastTransaction: Date.now(), // We don't have exact timestamp from API, so use current time
+        transactionCount: detail.num_tx
+      }));
+
+      // Sort by total amount (descending) and limit results
+      const sortedTraders = traders.sort((a, b) => b.totalDeposited - a.totalDeposited);
+      const limitedTraders = sortedTraders.slice(0, limit);
+
+      console.log('[VaultService] Top traders from API:', limitedTraders);
+
+      return limitedTraders;
+    } catch (error) {
+      console.error('❌ Error getting top traders from API:', error);
+      
+      // Fallback to smart contract method if API fails
+      console.log('[VaultService] Falling back to smart contract method...');
+      return await this.getTopTradersFromContract(limit);
+    }
+  }
+
+  /**
+   * Fallback method to get top traders from smart contract (original implementation)
+   */
+  private async getTopTradersFromContract(limit: number = 10): Promise<TraderInfo[]> {
     try {
       if (!this.config.vaultContractId) {
         throw new Error('Vault contract not initialized');
@@ -826,6 +904,7 @@ export class VaultService {
       const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
+      console.log('[VaultService] Fallback: Getting top traders from smart contract');
       const shareholders = await vaultContract.getShareholders();
       const addresses = shareholders.map((addr: any) => 
         typeof addr === 'string' ? addr : addr.toString()
@@ -847,7 +926,7 @@ export class VaultService {
 
       return traders.sort((a, b) => b.shares - a.shares).slice(0, limit);
     } catch (error) {
-      console.error('❌ Error getting top traders:', error);
+      console.error('❌ Error getting top traders from contract fallback:', error);
       return [];
     }
   }
