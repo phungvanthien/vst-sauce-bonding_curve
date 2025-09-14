@@ -46,8 +46,6 @@ import {
   ExternalLink,
   Copy,
   EyeOff,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWallet } from "@/contexts/WalletContext";
@@ -108,17 +106,23 @@ const Vault: React.FC = () => {
   const [isLoadingTopTraders, setIsLoadingTopTraders] = useState(false);
 
   // Deposit transactions table state
-  const [depositTransactions, setDepositTransactions] = useState<
-    DepositTransaction[]
-  >([]);
   const [allDepositTransactions, setAllDepositTransactions] = useState<
     DepositTransaction[]
   >([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [depositTransactions, setDepositTransactions] = useState<
+    DepositTransaction[]
+  >([]);
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [isLoadingDepositTransactions, setIsLoadingDepositTransactions] =
     useState(false);
+  const [isLoadingMoreTransactions, setIsLoadingMoreTransactions] =
+    useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+  const [currentOffset, setCurrentOffset] = useState(0);
+
+  // Pagination state for loaded transactions
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Load top traders with loading state
   const loadTopTradersWithLoading = useCallback(async () => {
@@ -147,25 +151,33 @@ const Vault: React.FC = () => {
       setAllDepositTransactions([]);
       setDepositTransactions([]);
       setTotalTransactions(0);
+      setCurrentOffset(0);
+      setHasMoreTransactions(true);
+      setCurrentPage(1);
       return;
     }
 
     setIsLoadingDepositTransactions(true);
     try {
-      // Fetch deposit transactions from API
+      // Fetch first 1000 deposit transactions from API
       const response = await fetchDepositTransactions(
         selectedVault.id,
         0, // offset - start from beginning
-        1000 // limit - fetch a large number to get all transactions for now
+        1000 // limit - fetch first 1000 transactions
       );
 
       setAllDepositTransactions(response.transactions);
       setTotalTransactions(response.total);
+      setCurrentOffset(1000); // Set offset for next load
+      setHasMoreTransactions(response.transactions.length === 1000); // If we got exactly 1000, there might be more
+      setCurrentPage(1); // Reset to first page
     } catch (error) {
       console.error("Error loading deposit transactions:", error);
       setAllDepositTransactions([]);
       setDepositTransactions([]);
       setTotalTransactions(0);
+      setCurrentOffset(0);
+      setHasMoreTransactions(false);
 
       // Show error toast to user
       toast({
@@ -178,7 +190,44 @@ const Vault: React.FC = () => {
     }
   }, [selectedVault]);
 
-  // Handle pagination for deposit transactions
+  // Load more deposit transactions
+  const loadMoreDepositTransactions = useCallback(async () => {
+    if (
+      !selectedVault ||
+      selectedVault.name === "Coming Soon..." ||
+      !hasMoreTransactions
+    ) {
+      return;
+    }
+
+    setIsLoadingMoreTransactions(true);
+    try {
+      // Fetch next 1000 deposit transactions from API
+      const response = await fetchDepositTransactions(
+        selectedVault.id,
+        currentOffset, // offset - continue from where we left off
+        1000 // limit - fetch next 1000 transactions
+      );
+
+      // Append new transactions to existing ones
+      setAllDepositTransactions((prev) => [...prev, ...response.transactions]);
+      setCurrentOffset((prev) => prev + 1000); // Update offset for next load
+      setHasMoreTransactions(response.transactions.length === 1000); // If we got exactly 1000, there might be more
+    } catch (error) {
+      console.error("Error loading more deposit transactions:", error);
+
+      // Show error toast to user
+      toast({
+        title: "Error",
+        description: "Failed to load more transactions",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingMoreTransactions(false);
+    }
+  }, [selectedVault, currentOffset, hasMoreTransactions]);
+
+  // Handle pagination for loaded transactions
   useEffect(() => {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
@@ -535,7 +584,7 @@ const Vault: React.FC = () => {
 
       <Tabs defaultValue="vaults" className="space-y-6">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="vaults">Available Vaults</TabsTrigger>
+          <TabsTrigger value="vaults">Vault Details</TabsTrigger>
           <TabsTrigger value="my-vaults">My Vaults</TabsTrigger>
           <TabsTrigger value="traders">Top Holders</TabsTrigger>
           <TabsTrigger value="transactions">Deposit Transactions</TabsTrigger>
@@ -766,7 +815,7 @@ const Vault: React.FC = () => {
 
         <TabsContent value="vaults" className="space-y-6">
           {/* Selected Vault Details */}
-          {selectedVault && (
+          {selectedVault ? (
             <Card className="mt-6">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1055,6 +1104,22 @@ const Vault: React.FC = () => {
                 )}
               </CardContent>
             </Card>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Shield className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-600 mb-2">
+                    No Vault Selected
+                  </h4>
+                  <p className="text-sm text-gray-500">
+                    Please select a vault from the list above to view details.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 
@@ -1267,7 +1332,7 @@ const Vault: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Page Size Selector */}
+                {/* Page Size Selector and Transaction Count Display */}
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-cyrus-textSecondary">
@@ -1287,6 +1352,7 @@ const Vault: React.FC = () => {
                         <SelectItem value="10">10</SelectItem>
                         <SelectItem value="25">25</SelectItem>
                         <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
                       </SelectContent>
                     </Select>
                     <span className="text-sm text-cyrus-textSecondary">
@@ -1294,13 +1360,8 @@ const Vault: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-sm text-cyrus-textSecondary">
-                    Showing{" "}
-                    {Math.min(
-                      (currentPage - 1) * pageSize + 1,
-                      totalTransactions
-                    )}{" "}
-                    to {Math.min(currentPage * pageSize, totalTransactions)} of{" "}
-                    {totalTransactions} entries
+                    Showing {depositTransactions.length} of{" "}
+                    {allDepositTransactions.length} loaded transactions
                   </div>
                 </div>
 
@@ -1444,12 +1505,12 @@ const Vault: React.FC = () => {
                   </Table>
                 </div>
 
-                {/* Pagination */}
-                {totalTransactions > pageSize && (
+                {/* Pagination for loaded transactions */}
+                {allDepositTransactions.length > pageSize && (
                   <div className="flex items-center justify-between mt-4">
                     <div className="text-sm text-cyrus-textSecondary">
                       Page {currentPage} of{" "}
-                      {Math.ceil(totalTransactions / pageSize)}
+                      {Math.ceil(allDepositTransactions.length / pageSize)}
                     </div>
                     <Pagination>
                       <PaginationContent>
@@ -1483,7 +1544,7 @@ const Vault: React.FC = () => {
                         {/* Page Numbers */}
                         {(() => {
                           const totalPages = Math.ceil(
-                            totalTransactions / pageSize
+                            allDepositTransactions.length / pageSize
                           );
                           const pages = [];
 
@@ -1527,14 +1588,18 @@ const Vault: React.FC = () => {
                             onClick={() =>
                               setCurrentPage(
                                 Math.min(
-                                  Math.ceil(totalTransactions / pageSize),
+                                  Math.ceil(
+                                    allDepositTransactions.length / pageSize
+                                  ),
                                   currentPage + 1
                                 )
                               )
                             }
                             className={
                               currentPage ===
-                              Math.ceil(totalTransactions / pageSize)
+                              Math.ceil(
+                                allDepositTransactions.length / pageSize
+                              )
                                 ? "pointer-events-none opacity-50"
                                 : "cursor-pointer"
                             }
@@ -1546,12 +1611,16 @@ const Vault: React.FC = () => {
                           <PaginationLink
                             onClick={() =>
                               setCurrentPage(
-                                Math.ceil(totalTransactions / pageSize)
+                                Math.ceil(
+                                  allDepositTransactions.length / pageSize
+                                )
                               )
                             }
                             className={
                               currentPage ===
-                              Math.ceil(totalTransactions / pageSize)
+                              Math.ceil(
+                                allDepositTransactions.length / pageSize
+                              )
                                 ? "pointer-events-none opacity-50"
                                 : "cursor-pointer"
                             }
@@ -1561,6 +1630,40 @@ const Vault: React.FC = () => {
                         </PaginationItem>
                       </PaginationContent>
                     </Pagination>
+                  </div>
+                )}
+
+                {/* Load More Button */}
+                {hasMoreTransactions && allDepositTransactions.length > 0 && (
+                  <div className="flex justify-center mt-6">
+                    <Button
+                      onClick={loadMoreDepositTransactions}
+                      disabled={isLoadingMoreTransactions}
+                      variant="outline"
+                      className="flex items-center gap-2"
+                    >
+                      {isLoadingMoreTransactions ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyrus-accent"></div>
+                          Loading More...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-4 w-4" />
+                          Load More Transactions (1000 more)
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+
+                {/* End of data message */}
+                {!hasMoreTransactions && allDepositTransactions.length > 0 && (
+                  <div className="text-center mt-6">
+                    <p className="text-sm text-cyrus-textSecondary">
+                      All transactions loaded ({allDepositTransactions.length}{" "}
+                      total)
+                    </p>
                   </div>
                 )}
               </CardContent>

@@ -216,7 +216,7 @@ export function getTokenLogoUrl(tokenSymbol: string): string {
 export async function fetchDepositTransactions(
   vaultId: number,
   offset: number = 0,
-  limit: number = 10
+  limit: number = 1000
 ): Promise<DepositTransactionsResponse> {
   try {
     const baseUrl = import.meta.env.VITE_VISTIA_BASE_URL;
