@@ -1318,16 +1318,26 @@ const Vault: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={loadDepositTransactions}
-                    disabled={isLoadingDepositTransactions}
+                    onClick={loadMoreDepositTransactions}
+                    disabled={isLoadingMoreTransactions || !hasMoreTransactions}
                     className="flex items-center gap-2"
                   >
-                    <RefreshCw
-                      className={`h-4 w-4 ${
-                        isLoadingDepositTransactions ? "animate-spin" : ""
-                      }`}
-                    />
-                    Refresh
+                    {isLoadingMoreTransactions ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyrus-accent"></div>
+                        Loading More...
+                      </>
+                    ) : !hasMoreTransactions ? (
+                      <>
+                        All transactions loaded ({allDepositTransactions.length}{" "}
+                        total)
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4" />
+                        Load More Transactions (1000 more)
+                      </>
+                    )}
                   </Button>
                 </div>
               </CardHeader>
