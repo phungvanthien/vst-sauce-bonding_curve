@@ -9,7 +9,7 @@ import {
 import { ethers } from 'ethers';
 import { accountIdToEvmAddress } from '@/utils/account-utils';
 import { contractIdToEvmAliasAddress, evmAliasAddressToContractId } from '@/utils/contract-utils';
-import { toSmallestUnits, fromSmallestUnits } from '@/utils/token-utils';
+import { toSmallestUnits, toHumanReadable } from '@/utils/token-utils';
 
 // Import the real Vault ABI that works in tests
 import vaultABI from '../../VaultABI.json';
@@ -99,11 +99,6 @@ export interface VaultServiceConfig {
   
   // Rate Limiting
   callDelay?: number;
-  batchDelay?: number;
-  additionalDelay?: number;
-  
-  // Token Configuration
-  tokenDecimals?: number;
   
   // Runtime State (optional for initialization)
   manager?: any;
@@ -137,11 +132,6 @@ export class VaultService {
     
     // Rate Limiting
     callDelay: 200,
-    batchDelay: 500,
-    additionalDelay: 300,
-    
-    // Token Configuration
-    tokenDecimals: 6,
     
     // Runtime State
     manager: null,
@@ -338,12 +328,13 @@ export class VaultService {
       const depositsClosedByTime = currentTimestamp >= runTimestamp.toNumber();
       
       // Convert values
-      const totalSharesNum = _totalShares.toNumber();
+      const totalSharesRaw = _totalShares.toNumber ? _totalShares.toNumber() : Number(_totalShares);
       const totalBalanceRaw = _totalBalance.toNumber ? _totalBalance.toNumber() : Number(_totalBalance);
-      const totalBalanceNum = await fromSmallestUnits(totalBalanceRaw, token1Address);
+      const totalSharesNum = await toHumanReadable(totalSharesRaw, token1Address);
+      const totalBalanceNum = await toHumanReadable(totalBalanceRaw, token1Address);
 
       // Calculate APY
-      const computedApy = totalSharesNum > 0 ? Math.max(((totalBalanceRaw - totalSharesNum) / totalSharesNum) * 100, 0) : 0;
+      const computedApy = totalSharesRaw > 0 ? Math.max(((totalBalanceRaw - totalSharesRaw) / totalSharesRaw) * 100, 0) : 0;
 
       return {
         totalShares: totalSharesNum,
@@ -463,7 +454,7 @@ export class VaultService {
       
       // Get token1 address for conversion
       const token1Address = await vaultContract.token1();
-      return await fromSmallestUnits(value, token1Address);
+      return await toHumanReadable(value, token1Address);
     } catch (error) {
       console.error('❌ Error getting user shares:', error);
       return 0;
@@ -852,7 +843,6 @@ export class VaultService {
       const url = new URL(`vault/${vaultId}/shareholders/details`, baseUrlWithSlash);
       url.searchParams.append('limit', '100'); // Get up to 100 shareholders
 
-      console.log('[VaultService] Fetching top traders from API:', url.toString());
 
       const response = await fetch(url.toString());
       
@@ -880,14 +870,11 @@ export class VaultService {
       const sortedTraders = traders.sort((a, b) => b.totalDeposited - a.totalDeposited);
       const limitedTraders = sortedTraders.slice(0, limit);
 
-      console.log('[VaultService] Top traders from API:', limitedTraders);
-
       return limitedTraders;
     } catch (error) {
       console.error('❌ Error getting top traders from API:', error);
       
       // Fallback to smart contract method if API fails
-      console.log('[VaultService] Falling back to smart contract method...');
       return await this.getTopTradersFromContract(limit);
     }
   }
@@ -904,7 +891,6 @@ export class VaultService {
       const vaultEvm = await contractIdToEvmAliasAddress(this.config.vaultContractId);
       const vaultContract = new ethers.Contract(vaultEvm, VAULT_ABI_ETHERS, this.getEthersProvider());
       
-      console.log('[VaultService] Fallback: Getting top traders from smart contract');
       const shareholders = await vaultContract.getShareholders();
       const addresses = shareholders.map((addr: any) => 
         typeof addr === 'string' ? addr : addr.toString()

@@ -1,5 +1,6 @@
 import { AccountId, TokenId } from "@hashgraph/sdk"
 import type { Id, Address } from '@/types/types'
+import { User } from "@/contexts/AuthContext";
 
 // Helper: Check if is native
 function isNative(tokenAddressOrId: Address | Id) {
@@ -49,7 +50,7 @@ export async function accountIdToEvmAddress(accountId: string): Promise<`0x${str
         throw new Error('VITE_MIRROR_NODE_URL is not set')
     }
     const baseUrl = import.meta.env.VITE_MIRROR_NODE_URL;
-  const url = `${baseUrl}/accounts/${encodeURIComponent(accountId)}`;
+  const url = `${baseUrl}/accounts/${accountId}`;
   try {
     const res = await fetch(url);
     if (res.ok) {
@@ -76,18 +77,18 @@ export async function accountIdToEvmAddress(accountId: string): Promise<`0x${str
 export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Get user address based on wallet type
-export function getUserAddress(user: any): string {
+export function getUserAddress(user: User): string {
     if (!user) return '';
     return user.walletType === 'hashpack' ? user.accountId : user.walletAddress;
 }
 
 // Check if user is connected
-export function isUserConnected(user: any): boolean {
+export function isUserConnected(user: User): boolean {
     return !!user && (!!user.accountId || !!user.walletAddress);
 }
 
 // Validate user permissions for vault operations
-export function validateUserPermissions(user: any, operation: string): void {
+export function validateUserPermissions(user: User, operation: string): void {
     if (!isUserConnected(user)) {
         throw new Error(`User must be connected to perform ${operation}`);
     }

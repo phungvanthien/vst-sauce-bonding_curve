@@ -136,11 +136,11 @@ export async function getTokenDecimal(tokenAddressOrId: Address | Id) {
 export async function toSmallestUnits(amountUnits: number, tokenType?: string): Promise<number> {
     const decimals = await getTokenDecimal(tokenType as Address | Id);
     const factor = Math.pow(10, decimals);
-    return Math.round(amountUnits * factor);
+    return amountUnits * factor;
 }
 
 // Convert smallest units to human units using token decimals
-export async function fromSmallestUnits(amountSmallest: number, tokenType?: string): Promise<number> {
+export async function toHumanReadable(amountSmallest: number, tokenType?: string): Promise<number> {
     const decimals = await getTokenDecimal(tokenType as Address | Id);
     const factor = Math.pow(10, decimals);
     return amountSmallest / factor;
@@ -628,11 +628,17 @@ export async function waitForTransactionConfirmation(
     throw new Error('VITE_MIRROR_NODE_URL is not set');
   }
 
-
+  // Replace % with hyphens and only the last dot with hyphen
+  const formattedTransactionHash = transactionHash.replace(/@/, '-').replace(/\.([^.]*)$/, '-$1');
+  
+  console.log('[token-utils] Transaction hash transformation:', {
+    original: transactionHash,
+    transformed: formattedTransactionHash
+  });
 
   while (Date.now() - startTime < timeoutMs) {
     try {
-      const url = `${mirrorNodeUrl}/transactions/${encodeURIComponent(transactionHash)}?limit=1&order=desc`;
+      const url = `${mirrorNodeUrl}/transactions/${encodeURIComponent(formattedTransactionHash)}`;
       const response = await fetch(url);
       
       if (response.ok) {

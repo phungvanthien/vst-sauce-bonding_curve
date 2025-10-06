@@ -250,3 +250,6 @@ src/config/config.local.*
 
 # Scratch
 scratch.*
+VaultRefactored.tsx
+VaultOriginal.tsx
+API_INTEGRATION.md

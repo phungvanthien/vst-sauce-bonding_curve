@@ -58,7 +58,7 @@ interface VaultContextType {
   callGetVaultInfo: (vaultAddress: string) => Promise<VaultState | null>;
 }
 
-const VaultContext = createContext<VaultContextType | null>(null);
+export const VaultContext = createContext<VaultContextType | null>(null);
 
 export const VaultProvider = ({ children }: { children: ReactNode }) => {
   const [vaults, setVaults] = useState<Vault[]>([]);
@@ -508,12 +508,4 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </VaultContext.Provider>
   );
-};
-
-export const useVault = () => {
-  const context = useContext(VaultContext);
-  if (!context) {
-    throw new Error("useVault must be used within a VaultProvider");
-  }
-  return context;
 };

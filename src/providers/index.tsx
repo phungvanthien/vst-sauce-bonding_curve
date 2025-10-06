@@ -2,6 +2,7 @@ import { HashConnectProvider } from "@/contexts/HashConnectContext";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { VaultProvider } from "@/contexts/VaultContext";
+import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { darkTheme, RainbowKitProvider } from "@rainbow-me/rainbowkit";
@@ -26,7 +27,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             <WalletProvider>
               <AuthProvider>
                 <VaultProvider>
-                  <TooltipProvider>{children}</TooltipProvider>
+                  <SubscriptionProvider>
+                    <TooltipProvider>{children}</TooltipProvider>
+                  </SubscriptionProvider>
                 </VaultProvider>
               </AuthProvider>
             </WalletProvider>

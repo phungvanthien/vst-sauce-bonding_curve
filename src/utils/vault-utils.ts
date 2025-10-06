@@ -160,7 +160,7 @@ export function formatRelativeTime(timestamp: number): string {
 
 // Determine vault status based on current time and vault timestamps
 export function getVaultStatus(vault: Vault): {
-  status: 'active' | 'deposits-closed' | 'vault-closed';
+  status: 'deposit-open' | 'trading-active' | 'vault-closed';
   label: string;
   className: string;
 } {
@@ -178,16 +178,16 @@ export function getVaultStatus(vault: Vault): {
   // Check if deposits are closed (past run timestamp or manually closed)
   if (currentTimestamp >= vault.runTimestamp || vault.depositsClosed) {
     return {
-      status: 'deposits-closed',
-      label: 'Deposits Closed',
+      status: 'trading-active',
+      label: 'Trading Active',
       className: 'bg-orange-500'
     };
   }
   
   // Vault is active (before run timestamp and deposits not manually closed)
   return {
-    status: 'active',
-    label: 'Active',
+    status: 'deposit-open',
+    label: 'Deposit Open',
     className: 'bg-green-500'
   };
 }

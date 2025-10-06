@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { VAULTS_CONFIG } from '@/config/hederaConfig';
-import vaultABI from '../../Vault.json';
+import vaultABI from '../../VaultABI.json';
 
 // Test configuration
 const TEST_CONFIG = {
