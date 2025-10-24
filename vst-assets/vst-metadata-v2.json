@@ -1,0 +1,61 @@
+{
+  "name": "VST Token",
+  "type": "image/png",
+  "image": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/vst-assets/logo-512.png",
+  "description": "VST Token for Bonding Curve Trading - Deflationary token with burn mechanism",
+  "creator": "Vistia",
+  "format": "hedera-token-metadata@1.0.0",
+  "properties": {
+    "external_url": "https://github.com/phungvanthien/vst-sauce-bonding_curve",
+    "token_type": "fungible",
+    "network": "hedera_mainnet",
+    "decimals": "8",
+    "max_supply": "10000000000000000",
+    "burn_mechanism": "deflationary"
+  },
+  "files": [
+    {
+      "uri": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/vst-assets/logo-512.png",
+      "type": "image/png",
+      "is_default_file": true
+    },
+    {
+      "uri": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/vst-assets/logo-256.png",
+      "type": "image/png"
+    },
+    {
+      "uri": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/vst-assets/logo-128.png",
+      "type": "image/png"
+    },
+    {
+      "uri": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/vst-assets/logo-64.png",
+      "type": "image/png"
+    }
+  ],
+  "attributes": [
+    {
+      "trait_type": "Token Type",
+      "value": "Bonding Curve Token"
+    },
+    {
+      "trait_type": "Network",
+      "value": "Hedera Mainnet"
+    },
+    {
+      "trait_type": "Decimals",
+      "value": "8"
+    },
+    {
+      "trait_type": "Max Supply",
+      "value": "10000000000000000"
+    },
+    {
+      "trait_type": "Burn Mechanism",
+      "value": "Deflationary"
+    },
+    {
+      "trait_type": "Logo",
+      "value": "Vistia Brand"
+    }
+  ]
+}
