@@ -163,6 +163,14 @@ export class HashConnectManager {
         true
       );
 
+      // Force use of current mainnet nodes to avoid ERR_NAME_NOT_RESOLVED
+      if (this.instance) {
+        // Override network configuration to use current mainnet nodes
+        this.instance.network = "mainnet";
+        // Force use of current mainnet nodes
+        this.instance.nodeIds = ["0.0.3", "0.0.4", "0.0.5", "0.0.6", "0.0.7"];
+      }
+
       // Register events before calling init
       this.setUpHashConnectEvents();
 

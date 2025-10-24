@@ -12,6 +12,7 @@ import {
   X,
   ChartNetwork,
   ReplaceAll,
+  TrendingUp,
 } from "lucide-react";
 
 type SidebarLinkProps = {
@@ -93,6 +94,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       icon: <ReplaceAll size={18} />,
       text: "Portfolio",
       to: "/portfolio",
+    },
+    {
+      icon: <TrendingUp size={18} />,
+      text: "Bonding Curve",
+      to: "/bonding-curve",
     },
     {
       icon: <BellElectric size={18} />,

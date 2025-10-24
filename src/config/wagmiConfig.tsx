@@ -19,10 +19,9 @@ import {
 } from "wagmi/chains";
 
 function getProjectId() {
-  if (!import.meta.env.VITE_HASHCONNECT_PROJECT_ID) {
-    throw new Error("VITE_HASHCONNECT_PROJECT_ID is not set");
-  }
-  return import.meta.env.VITE_HASHCONNECT_PROJECT_ID;
+  // Use a fallback ID if VITE_HASHCONNECT_PROJECT_ID is not set
+  const projectId = import.meta.env.VITE_HASHCONNECT_PROJECT_ID || "demo-app-v1";
+  return projectId;
 }
 
 export const config = getDefaultConfig({

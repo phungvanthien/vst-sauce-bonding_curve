@@ -55,12 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         await new Promise((resolve) => setTimeout(resolve, SIMULATION_DELAY));
 
         // For existing sessions, we need to handle the conversion
-        const evmWalletAddress: string = user.walletAddress;
-        const accountId: string = user.accountId;
-
         setUser({
-          walletAddress: evmWalletAddress,
-          accountId: accountId,
+          walletAddress: walletAddress,
           sessionId,
           isActive: true,
           walletType: walletType || "hashpack",

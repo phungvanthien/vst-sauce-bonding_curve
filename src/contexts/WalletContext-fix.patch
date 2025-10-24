@@ -1,0 +1,38 @@
+--- Update wallet info when HashPack state changes with better debugging
+const connectionState = hashpackConnectionState;
+const pairingData = hashpackPairingData;
+
+console.log("📊 WalletContext HashPack Update:", {
+  connectionState,
+  isPaired: connectionState === HashConnectConnectionState.Paired,
+  hasPairingData: !!pairingData,
+  accountIds: pairingData?.accountIds,
+  firstAccount: pairingData?.accountIds?.[0],
+});
+
+if (
+  connectionState === HashConnectConnectionState.Paired &&
+  pairingData?.accountIds?.[0]
+) {
+  const account = pairingData.accountIds[0];
+  console.log("✅ Setting wallet info with account:", account);
+  
+  setWalletInfo({
+    type: "hashpack",
+    address: account,
+    accountId: account,
+    isConnected: true,
+    isConnecting: false,
+    manager,
+    pairingData,
+  });
+} else if (connectionState === HashConnectConnectionState.Disconnected) {
+  console.log("🔌 HashPack disconnected, clearing wallet info");
+  // Only clear if it was a HashPack wallet
+  setWalletInfo((prev) => (prev?.type === "hashpack" ? null : prev));
+} else {
+  console.log("⏳ Waiting for HashPack connection state:", {
+    connectionState,
+    hasAccountIds: !!pairingData?.accountIds?.length,
+  });
+}

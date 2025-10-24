@@ -9,6 +9,7 @@ import History from "@/pages/History";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 import Vault from "@/pages/Vault";
+import BondingCurvePage from "@/pages/BondingCurve";
 import Providers from "@/providers";
 
 type layoutedRoutesListType = {
@@ -40,6 +41,10 @@ const layoutedRoutesList: layoutedRoutesListType[] = [
   {
     path: "/vault",
     element: <Vault />,
+  },
+  {
+    path: "/bonding-curve",
+    element: <BondingCurvePage />,
   },
 ];
 
