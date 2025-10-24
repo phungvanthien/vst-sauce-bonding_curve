@@ -1,0 +1,36 @@
+{
+  "name": "VST Token",
+  "symbol": "VST",
+  "description": "VST Token for Bonding Curve Trading - Deflationary token with burn mechanism",
+  "image": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/hedera-vault-fe/vst-assets/logo-512.png",
+  "attributes": [
+    {
+      "trait_type": "Token Type",
+      "value": "Bonding Curve Token"
+    },
+    {
+      "trait_type": "Network",
+      "value": "Hedera Mainnet"
+    },
+    {
+      "trait_type": "Decimals",
+      "value": "8"
+    },
+    {
+      "trait_type": "Max Supply",
+      "value": "10000000000000000"
+    },
+    {
+      "trait_type": "Burn Mechanism",
+      "value": "Deflationary"
+    },
+    {
+      "trait_type": "Logo",
+      "value": "Vistia Brand"
+    }
+  ],
+  "external_url": "https://github.com/phungvanthien/vst-sauce-bonding_curve",
+  "background_color": "000000",
+  "animation_url": null,
+  "youtube_url": null
+}
