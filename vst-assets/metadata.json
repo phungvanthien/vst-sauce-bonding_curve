@@ -2,7 +2,7 @@
   "name": "VST Token",
   "symbol": "VST",
   "description": "VST Token for Bonding Curve Trading - Deflationary token with burn mechanism",
-  "image": "https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/hedera-vault-fe/vst-assets/logo-512.png",
+  "image": "https://raw.githubusercontent.com/phungvanthien/hedera-bonding-curve-24-10-2025/main/hedera-vault-fe/vst-assets/logo-512.png",
   "attributes": [
     {
       "trait_type": "Token Type",
@@ -29,7 +29,7 @@
       "value": "Vistia Brand"
     }
   ],
-  "external_url": "https://github.com/phungvanthien/vst-sauce-bonding_curve",
+  "external_url": "https://github.com/phungvanthien/hedera-bonding-curve-24-10-2025",
   "background_color": "000000",
   "animation_url": null,
   "youtube_url": null
