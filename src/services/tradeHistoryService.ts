@@ -56,7 +56,16 @@ export function saveTradeRecord(record: Omit<TradeRecord, 'id' | 'timestamp'>): 
 export function getAllTrades(): TradeRecord[] {
   try {
     const trades = localStorage.getItem(STORAGE_KEY);
-    return trades ? JSON.parse(trades) : [];
+    if (!trades) return [];
+    
+    const parsed = JSON.parse(trades);
+    // Ensure all trades have required properties
+    return parsed.filter((trade: any) => 
+      trade && 
+      typeof trade.amount === 'number' && 
+      typeof trade.cost === 'number' &&
+      trade.txId
+    );
   } catch (error) {
     console.error("❌ Failed to load trades:", error);
     return [];
@@ -122,10 +131,10 @@ export function getTradeStats(account: string) {
   const buyTrades = trades.filter(t => t.type === "buy");
   const sellTrades = trades.filter(t => t.type === "sell");
   
-  const totalBuyVST = buyTrades.reduce((sum, t) => sum + t.amount, 0);
-  const totalSellVST = sellTrades.reduce((sum, t) => sum + t.amount, 0);
-  const totalBuyHBAR = buyTrades.reduce((sum, t) => sum + t.cost, 0);
-  const totalSellHBAR = sellTrades.reduce((sum, t) => sum + t.cost, 0);
+  const totalBuyVST = buyTrades.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const totalSellVST = sellTrades.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const totalBuyHBAR = buyTrades.reduce((sum, t) => sum + (t.cost || 0), 0);
+  const totalSellHBAR = sellTrades.reduce((sum, t) => sum + (t.cost || 0), 0);
   
   return {
     totalTrades: trades.length,
@@ -156,8 +165,8 @@ export function formatTradeRecord(trade: TradeRecord): {
   
   return {
     type: trade.type === "buy" ? "Buy" : "Sell",
-    amount: `${trade.amount.toFixed(2)} VST`,
-    cost: `${trade.cost.toFixed(4)} HBAR`,
+    amount: `${(trade.amount || 0).toFixed(2)} VST`,
+    cost: `${(trade.cost || 0).toFixed(4)} HBAR`,
     time: `${dateStr} ${timeStr}`,
     txIdShort: trade.txId.substring(0, 20) + "...",
   };

@@ -20,7 +20,7 @@ type layoutedRoutesListType = {
 const layoutedRoutesList: layoutedRoutesListType[] = [
   {
     path: "/",
-    element: <Dashboard />,
+    element: <BondingCurvePage />,
   },
   {
     path: "/signalStatistics",

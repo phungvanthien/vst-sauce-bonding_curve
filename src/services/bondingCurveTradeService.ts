@@ -8,26 +8,28 @@ import {
 interface BuyTradeParams {
   buyerAccountId: string;
   vstAmount: number;
-  hbarCost: number;
+  sauceCost: number;
   treasuryAccountId: string;
   vstTokenId: string;
+  sauceTokenId: string;
   manager: any;
 }
 
 interface SellTradeParams {
   sellerAccountId: string;
   vstAmount: number;
-  hbarProceeds: number;
+  sauceProceeds: number;
   treasuryAccountId: string;
   vstTokenId: string;
+  sauceTokenId: string;
   manager: any;
 }
 
 export async function executeBuyTrade(params: BuyTradeParams): Promise<string> {
   try {
-    console.log(`🛍️ Starting buy transaction (Step 1: HBAR transfer)...`);
+    console.log(`🛍️ Starting buy transaction (Step 1: Sauce transfer)...`);
     console.log(`  VST Amount: ${params.vstAmount}`);
-    console.log(`  HBAR Cost: ${params.hbarCost}`);
+    console.log(`  Sauce Cost: ${params.sauceCost}`);
     console.log(`  Buyer: ${params.buyerAccountId}`);
     console.log(`  Treasury: ${params.treasuryAccountId}`);
 
@@ -35,23 +37,25 @@ export async function executeBuyTrade(params: BuyTradeParams): Promise<string> {
       throw new Error("Manager not provided");
     }
 
-    console.log(`📝 Creating HBAR-only transfer transaction...`);
-    const hbarOnlyTx = new TransferTransaction()
-      .addHbarTransfer(
+    console.log(`📝 Creating Sauce-only transfer transaction...`);
+    const sauceOnlyTx = new TransferTransaction()
+      .addTokenTransfer(
+        TokenId.fromString(params.sauceTokenId),
         AccountId.fromString(params.buyerAccountId),
-        new Hbar(-params.hbarCost)
+        -Math.floor(params.sauceCost * 1000000) // Convert to raw units (6 decimals)
       )
-      .addHbarTransfer(
+      .addTokenTransfer(
+        TokenId.fromString(params.sauceTokenId),
         AccountId.fromString(params.treasuryAccountId),
-        new Hbar(params.hbarCost)
+        Math.floor(params.sauceCost * 1000000) // Convert to raw units (6 decimals)
       )
       .setTransactionValidDuration(120)
       .setTransactionMemo(`Bonding Curve Buy: You will receive ${Math.floor(params.vstAmount / 100000000)} VST tokens after this transaction`);
 
-    console.log(`✅ HBAR-only transaction created`);
+    console.log(`✅ Sauce-only transaction created`);
     console.log(`📤 Sending to HashPack for user signature...`);
 
-    const response = await params.manager.executeTransaction(hbarOnlyTx, params.buyerAccountId);
+    const response = await params.manager.executeTransaction(sauceOnlyTx, params.buyerAccountId);
     
     console.log(`✅ Transaction response received:`, response);
 
@@ -104,7 +108,7 @@ export async function executeSellTrade(params: SellTradeParams): Promise<string>
         params.vstAmount
       )
       .setTransactionValidDuration(120)
-      .setTransactionMemo(`Bonding Curve Sell: You will receive ${params.hbarProceeds} HBAR after this transaction`);
+      .setTransactionMemo(`Bonding Curve Sell: You will receive ${params.sauceProceeds} Sauce after this transaction`);
 
     console.log(`✅ VST-only transaction created`);
     console.log(`📤 Sending to HashPack for user signature...`);

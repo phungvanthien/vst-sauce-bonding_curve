@@ -18,37 +18,37 @@ import {
 
 // Configuration
 const CONFIG = {
-  INITIAL_PRICE_HBAR: 1, // 1 HBAR
-  INITIAL_EXCHANGE_RATE: 100, // 100 VST per HBAR
+  INITIAL_PRICE_SAUCE: 0.1, // 0.1 Sauce per 1 VST
+  INITIAL_EXCHANGE_RATE: 1, // 1 VST = 0.1 Sauce (rate is 1:0.1)
   VST_DECIMALS: 8,
-  HBAR_DECIMALS: 8,
+  SAUCE_DECIMALS: 8,
   K_LINEAR: 0.0001, // Linear coefficient for price increase
   MIN_PURCHASE: 1, // Minimum 1 VST
   MAX_PURCHASE: 10000, // Maximum 10,000 VST
 };
 
 export interface PricingData {
-  currentPrice: number; // HBAR per VST
+  currentPrice: number; // Sauce per VST
   averagePrice: number; // Average price for total purchase
   tokensToBuy: number;
-  totalCost: number; // In HBAR
+  totalCost: number; // In Sauce
   priceImpact: number; // Percentage
 }
 
 export interface SellData {
-  currentPrice: number; // HBAR per VST
+  currentPrice: number; // Sauce per VST
   tokensToSell: number;
-  totalReceived: number; // In HBAR
+  sauceReceived: number; // In Sauce
   priceImpact: number; // Percentage
 }
 
 /**
  * Calculate current price based on tokens sold (linear bonding curve)
  * Price = InitialPrice * (1 + K * TokensSold)
- * Where InitialPrice = 1 HBAR per 100 VST
+ * Where InitialPrice = 0.1 Sauce per 1 VST
  */
 function calculatePrice(tokensSold: number): number {
-  const initialPricePerVst = CONFIG.INITIAL_PRICE_HBAR / CONFIG.INITIAL_EXCHANGE_RATE;
+  const initialPricePerVst = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
   const pricePerVst = initialPricePerVst * (1 + CONFIG.K_LINEAR * tokensSold);
   return pricePerVst;
 }
@@ -65,7 +65,7 @@ export function calculateBuyCost(tokensToBuy: number): PricingData {
   }
 
   const initialPricePerVst =
-    CONFIG.INITIAL_PRICE_HBAR / CONFIG.INITIAL_EXCHANGE_RATE;
+    CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
 
   // Integral calculation for linear curve
   // Cost = P0 * n + (P0 * K * n^2) / 2
@@ -80,7 +80,7 @@ export function calculateBuyCost(tokensToBuy: number): PricingData {
   const averagePrice = totalCost / tokensToBuy;
 
   // Price impact (percentage)
-  const initialPrice = CONFIG.INITIAL_PRICE_HBAR / CONFIG.INITIAL_EXCHANGE_RATE;
+  const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
   const priceImpact = ((currentPrice - initialPrice) / initialPrice) * 100;
 
   return {
@@ -104,7 +104,7 @@ export function calculateSellProceeds(tokensToSell: number): SellData {
   }
 
   const initialPricePerVst =
-    CONFIG.INITIAL_PRICE_HBAR / CONFIG.INITIAL_EXCHANGE_RATE;
+    CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
 
   // Same formula but for sell (tokens are removed from circulation)
   const firstTerm = initialPricePerVst * tokensToSell;
@@ -117,7 +117,7 @@ export function calculateSellProceeds(tokensToSell: number): SellData {
   return {
     currentPrice,
     tokensToSell,
-    totalReceived,
+    sauceReceived: totalReceived, // Fix: use sauceReceived instead of totalReceived
     priceImpact,
   };
 }
@@ -126,25 +126,25 @@ export function calculateSellProceeds(tokensToSell: number): SellData {
  * Get current bonding curve status
  */
 export function getBondingCurveStatus() {
-  const initialPrice = CONFIG.INITIAL_PRICE_HBAR / CONFIG.INITIAL_EXCHANGE_RATE;
+  const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
 
   return {
     initialPrice,
     currentPrice: calculatePrice(0), // At 0 sold tokens
-    initialExchangeRate: CONFIG.INITIAL_EXCHANGE_RATE,
+    initialExchangeRate: CONFIG.INITIAL_PRICE_SAUCE, // Show 0.1 instead of 1
     linearCoefficient: CONFIG.K_LINEAR,
     minPurchase: CONFIG.MIN_PURCHASE,
     maxPurchase: CONFIG.MAX_PURCHASE,
     vstDecimals: CONFIG.VST_DECIMALS,
-    hbarDecimals: CONFIG.HBAR_DECIMALS,
+    sauceDecimals: CONFIG.SAUCE_DECIMALS,
   };
 }
 
 /**
  * Format price for display
  */
-export function formatPrice(priceInHbar: number): string {
-  return `${priceInHbar.toFixed(8)} HBAR`;
+export function formatPrice(priceInSauce: number): string {
+  return `${priceInSauce.toFixed(8)} Sauce`;
 }
 
 /**
@@ -165,20 +165,20 @@ export function fromRawAmount(rawAmount: bigint | number, decimals: number): num
 
 /**
  * Execute buy transaction
- * Transfer HBAR from buyer to treasury, and VST from treasury to buyer
+ * Transfer Sauce from buyer to treasury, and VST from treasury to buyer
  */
 export async function executeBuyTransaction(
   buyerAccountId: string,
   treasuryAccountId: string,
   vstTokenId: string,
-  hbarAmount: number,
+  sauceAmount: number,
   vstAmount: number,
-  hbarAccountPrivateKey?: string
+  sauceAccountPrivateKey?: string
 ): Promise<any> {
   try {
     console.log("🔄 Executing buy transaction...");
     console.log(`   Buyer: ${buyerAccountId}`);
-    console.log(`   HBAR Amount: ${hbarAmount}`);
+    console.log(`   Sauce Amount: ${sauceAmount}`);
     console.log(`   VST Amount: ${vstAmount}`);
 
     // For now, return transaction data (actual execution would require proper signing)
@@ -187,7 +187,7 @@ export async function executeBuyTransaction(
       transactionType: "BUY",
       buyerAccountId,
       treasuryAccountId,
-      hbarAmount,
+      sauceAmount,
       vstAmount,
       vstTokenId,
       timestamp: new Date().toISOString(),
@@ -200,21 +200,21 @@ export async function executeBuyTransaction(
 
 /**
  * Execute sell transaction
- * Burn VST and transfer HBAR from treasury to seller
+ * Burn VST and transfer Sauce from treasury to seller
  */
 export async function executeSellTransaction(
   sellerAccountId: string,
   treasuryAccountId: string,
   vstTokenId: string,
   vstAmount: number,
-  hbarAmount: number,
-  hbarAccountPrivateKey?: string
+  sauceAmount: number,
+  sauceAccountPrivateKey?: string
 ): Promise<any> {
   try {
     console.log("🔄 Executing sell transaction...");
     console.log(`   Seller: ${sellerAccountId}`);
     console.log(`   VST Amount: ${vstAmount}`);
-    console.log(`   HBAR Received: ${hbarAmount}`);
+    console.log(`   Sauce Received: ${sauceAmount}`);
 
     // For now, return transaction data (actual execution would require proper signing)
     return {
@@ -223,7 +223,7 @@ export async function executeSellTransaction(
       sellerAccountId,
       treasuryAccountId,
       vstAmount,
-      hbarAmount,
+      sauceAmount,
       vstTokenId,
       timestamp: new Date().toISOString(),
     };

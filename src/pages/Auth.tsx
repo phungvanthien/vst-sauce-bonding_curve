@@ -23,7 +23,7 @@ const Auth = () => {
   }, [isLoading, walletInfo?.isConnected]);
 
   if (isAuthenticated && !isLoading) {
-    return <Navigate to="/vault" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return (
