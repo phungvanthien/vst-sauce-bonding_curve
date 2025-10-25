@@ -15,7 +15,9 @@ import {
 import { executeBuyTrade, executeSellTrade, getTradeErrorMessage } from "@/services/bondingCurveTradeService";
 import { saveTradeRecord, getRecentTrades, clearAccountTrades, formatTradeRecord, getTradeStats } from "@/services/tradeHistoryService";
 import { saveBurnRecord, getRecentBurnRecords, getBurnStats, getBurnHistoryForChart, formatBurnRecord, clearSellerBurnRecords } from "@/services/burnHistoryService";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { updateStateAfterBuy, updateStateAfterSell, getBondingCurveStats } from "@/services/bondingCurveStateService";
+import { getTreasuryStats, refreshTreasuryBalance } from "@/services/treasuryBalanceService";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useWallet } from "@/contexts/WalletContext";
 import { associateToken, getAssociationErrorMessage } from "@/services/tokenAssociationService";
 import { useToast } from "@/hooks/use-toast";
@@ -38,6 +40,8 @@ export function BondingCurve() {
   const [loading, setLoading] = useState(false);
   const [priceHistory, setPriceHistory] = useState<any[]>([]);
   const [curveStatus, setCurveStatus] = useState<any>(null);
+  const [treasuryStats, setTreasuryStats] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [recentTrades, setRecentTrades] = useState<any[]>([]);
   const [tradeStats, setTradeStats] = useState<any>(null);
   const [recentBurns, setRecentBurns] = useState<any[]>([]);
@@ -118,43 +122,79 @@ export function BondingCurve() {
     }
   }, [walletInfo?.accountId]);
 
-  // Initialize bonding curve data
-  useEffect(() => {
+  // Load real-time bonding curve data
+  const loadBondingCurveData = async () => {
     try {
-      const status = getBondingCurveStatus();
+      setIsRefreshing(true);
+      console.log('📡 Loading real-time bonding curve data...');
+      
+      // Load Treasury stats
+      const treasuryStats = await getTreasuryStats();
+      setTreasuryStats(treasuryStats);
+      
+      // Load bonding curve status (now async)
+      const status = await getBondingCurveStatus();
       setCurveStatus(status);
+      
+      // Load price history
       const history = getPriceHistory(50000, 50);
       setPriceHistory(history);
+      
+      console.log('✅ Real-time data loaded:', {
+        treasuryBalance: treasuryStats.treasuryBalance,
+        tokensSold: treasuryStats.tokensSold,
+        currentPrice: status.currentPrice
+      });
     } catch (error) {
-      console.error("Failed to initialize bonding curve:", error);
+      console.error("Error loading real-time bonding curve data:", error);
+    } finally {
+      setIsRefreshing(false);
     }
+  };
+
+  // Initialize bonding curve data
+  useEffect(() => {
+    loadBondingCurveData();
   }, []);
 
-  // Calculate pricing when amount changes
+  // Auto-refresh every 30 seconds
   useEffect(() => {
-    if (!amount || isNaN(Number(amount))) {
-      setPricingData(null);
-      setSellData(null);
-      return;
-    }
+    const interval = setInterval(() => {
+      loadBondingCurveData();
+    }, 30000); // 30 seconds
 
-    try {
-      const numAmount = Number(amount);
+    return () => clearInterval(interval);
+  }, []);
 
-      if (mode === "buy") {
-        const pricing = calculateBuyCost(numAmount);
-        setPricingData(pricing);
-        setSellData(null);
-      } else {
-        const selling = calculateSellProceeds(numAmount);
-        setSellData(selling);
+  // Calculate pricing when amount changes (now async)
+  useEffect(() => {
+    const calculatePricing = async () => {
+      if (!amount || isNaN(Number(amount))) {
         setPricingData(null);
+        setSellData(null);
+        return;
       }
-    } catch (error) {
-      console.error("Price calculation error:", error);
-      setPricingData(null);
-      setSellData(null);
-    }
+
+      try {
+        const numAmount = Number(amount);
+
+        if (mode === "buy") {
+          const pricing = await calculateBuyCost(numAmount);
+          setPricingData(pricing);
+          setSellData(null);
+        } else {
+          const selling = await calculateSellProceeds(numAmount);
+          setSellData(selling);
+          setPricingData(null);
+        }
+      } catch (error) {
+        console.error("Price calculation error:", error);
+        setPricingData(null);
+        setSellData(null);
+      }
+    };
+
+    calculatePricing();
   }, [amount, mode]);
 
   const handleSwapMode = () => {
@@ -314,6 +354,10 @@ export function BondingCurve() {
             const result = await response.json();
             console.log(`✅ Backend Step 2 completed! VST TX: ${result.vstTxId}`);
             
+            // Update bonding curve state after successful buy
+            updateStateAfterBuy(numAmount);
+            console.log(`📊 Bonding curve state updated: +${numAmount} VST sold`);
+            
             // Show success notification for VST received
             toast({
               title: "🎉 VST Received!",
@@ -338,6 +382,10 @@ export function BondingCurve() {
           } else {
             const result = await response.json();
             console.log(`✅ Backend Step 2 completed! Sauce TX: ${result.sauceTxId}`);
+            
+            // Update bonding curve state after successful sell
+            updateStateAfterSell(numAmount);
+            console.log(`📊 Bonding curve state updated: +${numAmount} VST burned`);
             
             // Show success notification for Sauce received
             toast({
@@ -494,6 +542,47 @@ export function BondingCurve() {
         </Card>
       )}
 
+      {/* Treasury Stats */}
+      {treasuryStats && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-cyrus-text">Treasury Status</h3>
+            <Button
+              onClick={loadBondingCurveData}
+              disabled={isRefreshing}
+              variant="outline"
+              size="sm"
+              className="text-cyrus-textSecondary hover:text-cyrus-text"
+            >
+              {isRefreshing ? "Refreshing..." : "Refresh"}
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="p-4 border-cyrus-border/30">
+              <div className="text-sm text-cyrus-textSecondary mb-2">Treasury Balance</div>
+              <div className="text-2xl font-bold text-blue-400">
+                {treasuryStats.treasuryBalance?.toFixed(2) || "0.00"}
+              </div>
+              <div className="text-xs text-cyrus-textSecondary mt-1">VST tokens remaining</div>
+            </Card>
+            <Card className="p-4 border-cyrus-border/30">
+              <div className="text-sm text-cyrus-textSecondary mb-2">Tokens Sold</div>
+              <div className="text-2xl font-bold text-green-400">
+                {treasuryStats.tokensSold?.toFixed(2) || "0.00"}
+              </div>
+              <div className="text-xs text-cyrus-textSecondary mt-1">VST tokens sold</div>
+            </Card>
+            <Card className="p-4 border-cyrus-border/30">
+              <div className="text-sm text-cyrus-textSecondary mb-2">Sell Progress</div>
+              <div className="text-2xl font-bold text-purple-400">
+                {treasuryStats.sellPercentage?.toFixed(2) || "0.00"}%
+              </div>
+              <div className="text-xs text-cyrus-textSecondary mt-1">Of total supply</div>
+            </Card>
+          </div>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-4 border-cyrus-border/30">
@@ -505,9 +594,20 @@ export function BondingCurve() {
         </Card>
 
         <Card className="p-4 border-cyrus-border/30">
-          <div className="text-sm text-cyrus-textSecondary mb-2">Exchange Rate</div>
-          <div className="text-2xl font-bold">1 VST = {curveStatus.initialExchangeRate} Sauce</div>
-          <div className="text-xs text-cyrus-textSecondary mt-1">Initial VST-Sauce rate</div>
+          <div className="text-sm text-cyrus-textSecondary mb-2">Total Sold</div>
+          <div className="text-2xl font-bold text-green-400">
+            {curveStatus.totalTokensSold?.toFixed(2) || "0.00"}
+          </div>
+          <div className="text-xs text-cyrus-textSecondary mt-1">VST tokens sold</div>
+        </Card>
+
+
+        <Card className="p-4 border-cyrus-border/30">
+          <div className="text-sm text-cyrus-textSecondary mb-2">Current Exchange Rate</div>
+          <div className="text-2xl font-bold text-cyrus-accent">
+            1 VST = {curveStatus.currentExchangeRate?.toFixed(8) || "0.00000000"} Sauce
+          </div>
+          <div className="text-xs text-cyrus-textSecondary mt-1">Real-time VST-Sauce rate</div>
         </Card>
 
         <Card className="p-4 border-cyrus-border/30">
@@ -551,6 +651,44 @@ export function BondingCurve() {
               name="Price per VST (Sauce)"
               isAnimationActive={false}
             />
+            {/* Real-time price reference line */}
+            {curveStatus?.currentPrice && (
+              <ReferenceLine
+                y={curveStatus.currentPrice}
+                stroke="#FFFFFF"
+                strokeDasharray="5 5"
+                strokeWidth={2}
+                label={{
+                  value: `Current: ${curveStatus.currentPrice.toFixed(8)} Sauce`,
+                  position: "top",
+                  style: { 
+                    fill: "#FFFFFF", 
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                    textShadow: "1px 1px 2px rgba(0,0,0,0.8)"
+                  }
+                }}
+              />
+            )}
+            {/* Real-time tokens sold reference line */}
+            {curveStatus?.totalTokensSold && (
+              <ReferenceLine
+                x={curveStatus.totalTokensSold}
+                stroke="#4ECDC4"
+                strokeDasharray="3 3"
+                strokeWidth={2}
+                label={{
+                  value: `Sold: ${curveStatus.totalTokensSold.toFixed(0)} VST`,
+                  position: "left",
+                  style: { 
+                    fill: "#4ECDC4", 
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                    textShadow: "1px 1px 2px rgba(0,0,0,0.8)"
+                  }
+                }}
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </Card>
@@ -671,6 +809,15 @@ export function BondingCurve() {
                   %
                 </span>
               </div>
+              
+              {mode === "sell" && sellData && (
+                <div className="flex justify-between text-sm border-t border-cyrus-border/30 pt-3">
+                  <span className="text-cyrus-textSecondary">Average Price (Sauce)</span>
+                  <span className="font-mono text-cyrus-text">
+                    {formatPrice(sellData.sauceReceived / sellData.tokensToSell)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

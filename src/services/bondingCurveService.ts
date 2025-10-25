@@ -6,6 +6,8 @@ import {
   HbarUnit,
   Hbar,
 } from "@hashgraph/sdk";
+import { getBondingCurveState, updateStateAfterBuy, updateStateAfterSell } from "./bondingCurveStateService";
+import { getCachedTreasuryBalance } from "./treasuryBalanceService";
 
 /**
  * Bonding Curve Service for VST Token
@@ -54,90 +56,202 @@ function calculatePrice(tokensSold: number): number {
 }
 
 /**
- * Calculate cost to buy X tokens using integral of bonding curve
- * Cost = Integral[InitialPrice * (1 + K * t) dt] from 0 to X
+ * Get current price based on Treasury balance (real-time)
  */
-export function calculateBuyCost(tokensToBuy: number): PricingData {
+export async function getCurrentPrice(): Promise<number> {
+  try {
+    const treasuryBalance = await getCachedTreasuryBalance();
+    return calculatePrice(treasuryBalance.tokensSold);
+  } catch (error) {
+    console.error('Error getting current price from Treasury:', error);
+    // Fallback to localStorage state
+    const state = getBondingCurveState();
+    return calculatePrice(state.totalTokensSold);
+  }
+}
+
+/**
+ * Calculate cost to buy X tokens using integral of bonding curve
+ * Cost = Integral[InitialPrice * (1 + K * t) dt] from currentTokensSold to currentTokensSold + X
+ */
+export async function calculateBuyCost(tokensToBuy: number): Promise<PricingData> {
   if (tokensToBuy < CONFIG.MIN_PURCHASE || tokensToBuy > CONFIG.MAX_PURCHASE) {
     throw new Error(
       `Purchase amount must be between ${CONFIG.MIN_PURCHASE} and ${CONFIG.MAX_PURCHASE} VST`
     );
   }
 
-  const initialPricePerVst =
-    CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+  try {
+    // Get real-time Treasury balance
+    const treasuryBalance = await getCachedTreasuryBalance();
+    const currentTokensSold = treasuryBalance.tokensSold;
+    
+    const initialPricePerVst = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
 
-  // Integral calculation for linear curve
-  // Cost = P0 * n + (P0 * K * n^2) / 2
-  const firstTerm = initialPricePerVst * tokensToBuy;
-  const secondTerm = (initialPricePerVst * CONFIG.K_LINEAR * tokensToBuy ** 2) / 2;
-  const totalCost = firstTerm + secondTerm;
+    // Calculate cost using integral from currentTokensSold to currentTokensSold + tokensToBuy
+    const startPoint = currentTokensSold;
+    const endPoint = currentTokensSold + tokensToBuy;
+    
+    const firstTerm = initialPricePerVst * tokensToBuy;
+    const secondTerm = (initialPricePerVst * CONFIG.K_LINEAR * (endPoint ** 2 - startPoint ** 2)) / 2;
+    const totalCost = firstTerm + secondTerm;
 
-  // Current price after purchase
-  const currentPrice = calculatePrice(tokensToBuy);
+    // Current price after purchase
+    const currentPrice = calculatePrice(endPoint);
 
-  // Average price
-  const averagePrice = totalCost / tokensToBuy;
+    // Average price
+    const averagePrice = totalCost / tokensToBuy;
 
-  // Price impact (percentage)
-  const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
-  const priceImpact = ((currentPrice - initialPrice) / initialPrice) * 100;
+    // Price impact (percentage)
+    const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+    const priceImpact = ((currentPrice - initialPrice) / initialPrice) * 100;
 
-  return {
-    currentPrice,
-    averagePrice,
-    tokensToBuy,
-    totalCost,
-    priceImpact,
-  };
+    return {
+      currentPrice,
+      averagePrice,
+      tokensToBuy,
+      totalCost,
+      priceImpact,
+    };
+  } catch (error) {
+    console.error('Error calculating buy cost from Treasury:', error);
+    // Fallback to localStorage state
+    const state = getBondingCurveState();
+    const currentTokensSold = state.totalTokensSold;
+    
+    const initialPricePerVst = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+    const startPoint = currentTokensSold;
+    const endPoint = currentTokensSold + tokensToBuy;
+    
+    const firstTerm = initialPricePerVst * tokensToBuy;
+    const secondTerm = (initialPricePerVst * CONFIG.K_LINEAR * (endPoint ** 2 - startPoint ** 2)) / 2;
+    const totalCost = firstTerm + secondTerm;
+    const currentPrice = calculatePrice(endPoint);
+    const averagePrice = totalCost / tokensToBuy;
+    const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+    const priceImpact = ((currentPrice - initialPrice) / initialPrice) * 100;
+
+    return {
+      currentPrice,
+      averagePrice,
+      tokensToBuy,
+      totalCost,
+      priceImpact,
+    };
+  }
 }
 
 /**
- * Calculate HBAR received from selling tokens
+ * Calculate Sauce received from selling tokens (real-time from Treasury)
  * Sells burn tokens and withdraw from treasury
  */
-export function calculateSellProceeds(tokensToSell: number): SellData {
+export async function calculateSellProceeds(tokensToSell: number): Promise<SellData> {
   if (tokensToSell < CONFIG.MIN_PURCHASE || tokensToSell > CONFIG.MAX_PURCHASE) {
     throw new Error(
       `Sell amount must be between ${CONFIG.MIN_PURCHASE} and ${CONFIG.MAX_PURCHASE} VST`
     );
   }
 
-  const initialPricePerVst =
-    CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+  try {
+    // Get real-time Treasury balance
+    const treasuryBalance = await getCachedTreasuryBalance();
+    const currentTokensSold = treasuryBalance.tokensSold;
+    
+    const initialPricePerVst = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
 
-  // Same formula but for sell (tokens are removed from circulation)
-  const firstTerm = initialPricePerVst * tokensToSell;
-  const secondTerm = (initialPricePerVst * CONFIG.K_LINEAR * tokensToSell ** 2) / 2;
-  const totalReceived = firstTerm + secondTerm;
+    // Calculate proceeds using integral from currentTokensSold to currentTokensSold - tokensToSell
+    // For sell, we go backwards in the curve
+    const startPoint = currentTokensSold;
+    const endPoint = Math.max(0, currentTokensSold - tokensToSell); // Can't go below 0
+    
+    const firstTerm = initialPricePerVst * tokensToSell;
+    const secondTerm = (initialPricePerVst * CONFIG.K_LINEAR * (startPoint ** 2 - endPoint ** 2)) / 2;
+    const totalReceived = firstTerm + secondTerm;
 
-  const currentPrice = calculatePrice(tokensToSell);
-  const priceImpact = ((currentPrice - initialPricePerVst) / initialPricePerVst) * 100;
+    // Current price before sell
+    const currentPrice = calculatePrice(currentTokensSold);
+    const priceImpact = ((currentPrice - initialPricePerVst) / initialPricePerVst) * 100;
 
-  return {
-    currentPrice,
-    tokensToSell,
-    sauceReceived: totalReceived, // Fix: use sauceReceived instead of totalReceived
-    priceImpact,
-  };
+    return {
+      currentPrice,
+      tokensToSell,
+      sauceReceived: totalReceived,
+      priceImpact,
+    };
+  } catch (error) {
+    console.error('Error calculating sell proceeds from Treasury:', error);
+    // Fallback to localStorage state
+    const state = getBondingCurveState();
+    const currentTokensSold = state.totalTokensSold;
+    
+    const initialPricePerVst = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+    const startPoint = currentTokensSold;
+    const endPoint = Math.max(0, currentTokensSold - tokensToSell);
+    
+    const firstTerm = initialPricePerVst * tokensToSell;
+    const secondTerm = (initialPricePerVst * CONFIG.K_LINEAR * (startPoint ** 2 - endPoint ** 2)) / 2;
+    const totalReceived = firstTerm + secondTerm;
+    const currentPrice = calculatePrice(currentTokensSold);
+    const priceImpact = ((currentPrice - initialPricePerVst) / initialPricePerVst) * 100;
+
+    return {
+      currentPrice,
+      tokensToSell,
+      sauceReceived: totalReceived,
+      priceImpact,
+    };
+  }
 }
 
 /**
- * Get current bonding curve status
+ * Get current bonding curve status (real-time from Treasury)
  */
-export function getBondingCurveStatus() {
-  const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+export async function getBondingCurveStatus() {
+  try {
+    const treasuryBalance = await getCachedTreasuryBalance();
+    const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+    const currentPrice = await getCurrentPrice();
 
-  return {
-    initialPrice,
-    currentPrice: calculatePrice(0), // At 0 sold tokens
-    initialExchangeRate: CONFIG.INITIAL_PRICE_SAUCE, // Show 0.1 instead of 1
-    linearCoefficient: CONFIG.K_LINEAR,
-    minPurchase: CONFIG.MIN_PURCHASE,
-    maxPurchase: CONFIG.MAX_PURCHASE,
-    vstDecimals: CONFIG.VST_DECIMALS,
-    sauceDecimals: CONFIG.SAUCE_DECIMALS,
-  };
+    return {
+      initialPrice,
+      currentPrice, // Real-time price based on Treasury balance
+      totalTokensSold: treasuryBalance.tokensSold,
+      totalTokensBurned: 0, // Will be calculated from burn history
+      netTokensInCirculation: treasuryBalance.tokensSold,
+      treasuryBalance: treasuryBalance.balanceDisplay,
+      tokensRemaining: treasuryBalance.balanceDisplay,
+      initialExchangeRate: CONFIG.INITIAL_PRICE_SAUCE, // Show 0.1 instead of 1
+      currentExchangeRate: currentPrice, // Real-time exchange rate
+      linearCoefficient: CONFIG.K_LINEAR,
+      minPurchase: CONFIG.MIN_PURCHASE,
+      maxPurchase: CONFIG.MAX_PURCHASE,
+      vstDecimals: CONFIG.VST_DECIMALS,
+      sauceDecimals: CONFIG.SAUCE_DECIMALS,
+    };
+  } catch (error) {
+    console.error('Error getting bonding curve status from Treasury:', error);
+    // Fallback to localStorage state
+    const state = getBondingCurveState();
+    const initialPrice = CONFIG.INITIAL_PRICE_SAUCE / CONFIG.INITIAL_EXCHANGE_RATE;
+    const currentPrice = calculatePrice(state.totalTokensSold);
+
+    return {
+      initialPrice,
+      currentPrice,
+      totalTokensSold: state.totalTokensSold,
+      totalTokensBurned: state.totalTokensBurned,
+      netTokensInCirculation: state.totalTokensSold - state.totalTokensBurned,
+      treasuryBalance: 100000 - state.totalTokensSold,
+      tokensRemaining: 100000 - state.totalTokensSold,
+      initialExchangeRate: CONFIG.INITIAL_PRICE_SAUCE,
+      currentExchangeRate: currentPrice, // Real-time exchange rate
+      linearCoefficient: CONFIG.K_LINEAR,
+      minPurchase: CONFIG.MIN_PURCHASE,
+      maxPurchase: CONFIG.MAX_PURCHASE,
+      vstDecimals: CONFIG.VST_DECIMALS,
+      sauceDecimals: CONFIG.SAUCE_DECIMALS,
+    };
+  }
 }
 
 /**
