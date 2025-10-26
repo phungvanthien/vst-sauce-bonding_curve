@@ -381,14 +381,15 @@ export function BondingCurve() {
             updateStateAfterBuy(numAmount);
             console.log(`📊 Bonding curve state updated: +${numAmount} VST sold`);
             
-            // Save trade record with actual VST transfer transaction ID
+            // Save trade record with both transaction IDs
             if (walletInfo?.accountId) {
               saveTradeRecord({
                 type: "buy",
                 account: walletInfo.accountId,
                 amount: numAmount,
                 cost: data.sauceCost,
-                txId: result.vstTxId, // Use actual VST transfer TX instead of user TX
+                txId: result.vstTxId, // Treasury VST transfer TX
+                userTxId: txId, // User Sauce send TX
                 status: "completed",
               });
 
@@ -429,14 +430,15 @@ export function BondingCurve() {
             updateStateAfterSell(numAmount);
             console.log(`📊 Bonding curve state updated: +${numAmount} VST burned`);
             
-            // Save trade record with actual Sauce transfer transaction ID
+            // Save trade record with both transaction IDs
             if (walletInfo?.accountId) {
               saveTradeRecord({
                 type: "sell",
                 account: walletInfo.accountId,
                 amount: numAmount,
                 cost: data.sauceReceived,
-                txId: result.sauceTxId, // Use actual Sauce transfer TX instead of user TX
+                txId: result.sauceTxId, // Treasury Sauce transfer TX
+                userTxId: txId, // User VST send TX
                 status: "completed",
               });
 
@@ -1102,7 +1104,8 @@ export function BondingCurve() {
                     <th className="text-right py-2 px-3 text-cyrus-textSecondary font-semibold">Amount</th>
                     <th className="text-right py-2 px-3 text-cyrus-textSecondary font-semibold">Cost (Sauce)</th>
                     <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">Time</th>
-                    <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">TX Status</th>
+                    <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">Treasury TX</th>
+                    <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">User TX</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1126,8 +1129,20 @@ export function BondingCurve() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:underline"
+                            title={isBuy ? "VST Transfer TX" : "Sauce Transfer TX"}
                           >
-                            {formatted.txIdShort}
+                            {trade.txId?.substring(0, 20)}...
+                          </a>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-green-400 text-xs hover:text-green-300">
+                          <a 
+                            href={`https://hashscan.io/mainnet/transaction/${trade.userTxId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                            title={isBuy ? "Sauce Send TX" : "VST Send TX"}
+                          >
+                            {trade.userTxId?.substring(0, 20)}...
                           </a>
                         </td>
                       </tr>

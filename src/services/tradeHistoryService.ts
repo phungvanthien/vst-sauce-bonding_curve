@@ -9,7 +9,8 @@ export interface TradeRecord {
   account: string;
   amount: number; // VST amount
   cost: number; // Sauce cost/proceeds
-  txId: string;
+  txId: string; // Treasury transaction ID (VST receive or Sauce receive)
+  userTxId: string; // User transaction ID (Sauce send or VST send)
   timestamp: number;
   status: "completed" | "pending" | "failed";
 }
@@ -166,7 +167,7 @@ export function formatTradeRecord(trade: TradeRecord): {
   return {
     type: trade.type === "buy" ? "Buy" : "Sell",
     amount: `${(trade.amount || 0).toFixed(2)} VST`,
-    cost: `${(trade.cost || 0).toFixed(4)} HBAR`,
+    cost: `${(trade.cost || 0).toFixed(4)} Sauce`,
     time: `${dateStr} ${timeStr}`,
     txIdShort: trade.txId.substring(0, 20) + "...",
   };
