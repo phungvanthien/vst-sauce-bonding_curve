@@ -8,7 +8,7 @@ export interface TradeRecord {
   type: "buy" | "sell";
   account: string;
   amount: number; // VST amount
-  cost: number; // HBAR cost/proceeds
+  cost: number; // Sauce cost/proceeds
   txId: string;
   timestamp: number;
   status: "completed" | "pending" | "failed";

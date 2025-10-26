@@ -47,6 +47,10 @@ export function BondingCurve() {
   const [recentBurns, setRecentBurns] = useState<any[]>([]);
   const [burnStats, setBurnStats] = useState<any>(null);
   const [burnHistory, setBurnHistory] = useState<any[]>([]);
+  const [walletBalance, setWalletBalance] = useState<{
+    sauceBalance: number;
+    vstBalance: number;
+  }>({ sauceBalance: 0, vstBalance: 0 });
 
   
   // Check if token is already associated with wallet
@@ -89,6 +93,10 @@ export function BondingCurve() {
       try {
         const trades = getRecentTrades(walletInfo.accountId, 10);
         const stats = getTradeStats(walletInfo.accountId);
+        
+        console.log(`📈 Found ${trades.length} trades:`, trades);
+        console.log(`📊 Trade stats:`, stats);
+        
         setRecentTrades(trades);
         setTradeStats(stats);
         console.log(`✅ Loaded ${trades.length} recent trades`);
@@ -98,10 +106,44 @@ export function BondingCurve() {
         setTradeStats(null);
       }
     } else {
+      console.log(`📊 No account connected, clearing trade history`);
       setRecentTrades([]);
       setTradeStats(null);
     }
   }, [walletInfo?.accountId]);
+
+  // Load wallet balance when wallet connects
+  useEffect(() => {
+    const fetchWalletBalance = async () => {
+      if (walletInfo?.accountId) {
+        try {
+          console.log(`💰 Fetching wallet balance for ${walletInfo.accountId}...`);
+          const mirrorNodeUrl = import.meta.env.VITE_MIRROR_NODE_URL || 'https://mainnet.mirrornode.hedera.com/api/v1';
+          
+          const response = await axios.get(
+            `${mirrorNodeUrl}/accounts/${walletInfo.accountId}/tokens?limit=100`
+          );
+          
+          const tokens = response.data.tokens || [];
+          const sauceToken = tokens.find((t: any) => t.token_id === SAUCE_TOKEN_ID);
+          const vstToken = tokens.find((t: any) => t.token_id === VST_TOKEN_ID);
+          
+          const sauceBalance = sauceToken ? sauceToken.balance / 1000000 : 0; // Sauce has 6 decimals
+          const vstBalance = vstToken ? vstToken.balance / 100000000 : 0; // VST has 8 decimals
+          
+          setWalletBalance({ sauceBalance, vstBalance });
+          console.log(`✅ Wallet balance loaded: ${sauceBalance.toFixed(6)} Sauce, ${vstBalance.toFixed(2)} VST`);
+        } catch (error) {
+          console.error("❌ Failed to fetch wallet balance:", error);
+          setWalletBalance({ sauceBalance: 0, vstBalance: 0 });
+        }
+      } else {
+        setWalletBalance({ sauceBalance: 0, vstBalance: 0 });
+      }
+    };
+
+    fetchWalletBalance();
+  }, [walletInfo?.accountId, SAUCE_TOKEN_ID, VST_TOKEN_ID]);
 
   // Load burn data when wallet connects
   useEffect(() => {
@@ -302,27 +344,8 @@ export function BondingCurve() {
 
       console.log(`✅ ${mode.toUpperCase()} completed! TX: ${txId}`);
 
-        // Save trade record
-        if (walletInfo?.accountId) {
-          const tradeAmount = Number(amount);
-          const tradeCost = mode === "buy" ? data.totalCost : data.hbarReceived;
-          
-          saveTradeRecord({
-            type: mode,
-            account: walletInfo.accountId,
-            amount: tradeAmount,
-            cost: tradeCost,
-            txId,
-            status: "completed",
-          });
-
-          // Refresh trade history
-          const updatedTrades = getRecentTrades(walletInfo.accountId, 10);
-          const updatedStats = getTradeStats(walletInfo.accountId);
-          setRecentTrades(updatedTrades);
-          setTradeStats(updatedStats);
-          console.log(`✅ Trade saved to history`);
-        }
+        // Save trade record will be done after backend Step 2 completes
+        // with the actual transaction ID from backend
 
       toast({
         title: "Step 1 Complete!",
@@ -358,6 +381,25 @@ export function BondingCurve() {
             updateStateAfterBuy(numAmount);
             console.log(`📊 Bonding curve state updated: +${numAmount} VST sold`);
             
+            // Save trade record with actual VST transfer transaction ID
+            if (walletInfo?.accountId) {
+              saveTradeRecord({
+                type: "buy",
+                account: walletInfo.accountId,
+                amount: numAmount,
+                cost: data.sauceCost,
+                txId: result.vstTxId, // Use actual VST transfer TX instead of user TX
+                status: "completed",
+              });
+
+              // Refresh trade history
+              const updatedTrades = getRecentTrades(walletInfo.accountId, 10);
+              const updatedStats = getTradeStats(walletInfo.accountId);
+              setRecentTrades(updatedTrades);
+              setTradeStats(updatedStats);
+              console.log(`✅ Trade saved to history with VST TX: ${result.vstTxId}`);
+            }
+            
             // Show success notification for VST received
             toast({
               title: "🎉 VST Received!",
@@ -387,16 +429,35 @@ export function BondingCurve() {
             updateStateAfterSell(numAmount);
             console.log(`📊 Bonding curve state updated: +${numAmount} VST burned`);
             
+            // Save trade record with actual Sauce transfer transaction ID
+            if (walletInfo?.accountId) {
+              saveTradeRecord({
+                type: "sell",
+                account: walletInfo.accountId,
+                amount: numAmount,
+                cost: data.sauceReceived,
+                txId: result.sauceTxId, // Use actual Sauce transfer TX instead of user TX
+                status: "completed",
+              });
+
+              // Refresh trade history
+              const updatedTrades = getRecentTrades(walletInfo.accountId, 10);
+              const updatedStats = getTradeStats(walletInfo.accountId);
+              setRecentTrades(updatedTrades);
+              setTradeStats(updatedStats);
+              console.log(`✅ Trade saved to history with Sauce TX: ${result.sauceTxId}`);
+            }
+            
             // Show success notification for Sauce received
             toast({
               title: "🎉 Sauce Received!",
               description: `✅ ${data.sauceReceived} Sauce has been transferred to your wallet!\n📝 Sauce TX: ${result.sauceTxId.substring(0, 20)}...`,
             });
 
-            // Save burn record
+            // Save burn record with actual burn transaction ID
             try {
               saveBurnRecord({
-                txId: result.sauceTxId,
+                txId: result.burnTxId || result.sauceTxId, // Use burn TX if available, fallback to sauce TX
                 amount: Math.floor(numAmount * 100000000), // VST amount in raw units
                 seller: walletInfo.accountId!,
                 sauceReceived: data.sauceReceived,
@@ -588,24 +649,15 @@ export function BondingCurve() {
         <Card className="p-4 border-cyrus-border/30">
           <div className="text-sm text-cyrus-textSecondary mb-2">Current Price (Sauce)</div>
           <div className="text-2xl font-bold text-cyrus-accent">
-            {formatPrice(curveStatus.currentPrice)}
+            {curveStatus?.currentPrice?.toFixed(3) || "0.000"} Sauce
           </div>
           <div className="text-xs text-cyrus-textSecondary mt-1">Sauce per VST token</div>
         </Card>
 
         <Card className="p-4 border-cyrus-border/30">
-          <div className="text-sm text-cyrus-textSecondary mb-2">Total Sold</div>
-          <div className="text-2xl font-bold text-green-400">
-            {curveStatus.totalTokensSold?.toFixed(2) || "0.00"}
-          </div>
-          <div className="text-xs text-cyrus-textSecondary mt-1">VST tokens sold</div>
-        </Card>
-
-
-        <Card className="p-4 border-cyrus-border/30">
           <div className="text-sm text-cyrus-textSecondary mb-2">Current Exchange Rate</div>
           <div className="text-2xl font-bold text-cyrus-accent">
-            1 VST = {curveStatus.currentExchangeRate?.toFixed(8) || "0.00000000"} Sauce
+            1 VST = {curveStatus?.currentExchangeRate?.toFixed(3) || "0.000"} Sauce
           </div>
           <div className="text-xs text-cyrus-textSecondary mt-1">Real-time VST-Sauce rate</div>
         </Card>
@@ -768,6 +820,24 @@ export function BondingCurve() {
           {/* Price Details */}
           {(pricingData || sellData) && (
             <div className="space-y-3 mb-6 p-4 rounded-lg bg-cyrus-card/40 border border-cyrus-border/30">
+              {/* Wallet Balance */}
+              {mode === "buy" && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-cyrus-textSecondary">Your Sauce Balance</span>
+                  <span className="font-mono text-green-400">
+                    {walletBalance.sauceBalance.toFixed(6)} Sauce
+                  </span>
+                </div>
+              )}
+              {mode === "sell" && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-cyrus-textSecondary">Your VST Balance</span>
+                  <span className="font-mono text-blue-400">
+                    {walletBalance.vstBalance.toFixed(2)} VST
+                  </span>
+                </div>
+              )}
+              
               <div className="flex justify-between text-sm">
                 <span className="text-cyrus-textSecondary">
                   {mode === "buy" ? "Total Cost (Sauce)" : "Total Received (Sauce)"}
@@ -941,6 +1011,7 @@ export function BondingCurve() {
               <h3 className="text-sm font-semibold text-cyrus-accent mb-2">📈 How it works</h3>
               <ul className="text-xs text-cyrus-textSecondary space-y-1">
                 <li>• Initial price: 1 VST = 0.1 Sauce</li>
+                <li>• Current price: 1 VST = {curveStatus?.currentExchangeRate?.toFixed(3) || "0.000"} Sauce</li>
                 <li>• Price increases linearly with supply</li>
                 <li>• Buy: Sauce → Treasury, VST → You</li>
                 <li>• Sell: VST → Burned, Sauce → You</li>
@@ -977,7 +1048,7 @@ export function BondingCurve() {
       </div>
 
       {/* Recent Trades Section */}
-      {recentTrades.length > 0 && (
+      {recentTrades.length > 0 ? (
         <Card className="p-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1029,9 +1100,9 @@ export function BondingCurve() {
                   <tr className="border-b border-cyrus-border/30">
                     <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">Type</th>
                     <th className="text-right py-2 px-3 text-cyrus-textSecondary font-semibold">Amount</th>
-                    <th className="text-right py-2 px-3 text-cyrus-textSecondary font-semibold">Cost</th>
+                    <th className="text-right py-2 px-3 text-cyrus-textSecondary font-semibold">Cost (Sauce)</th>
                     <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">Time</th>
-                    <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">TX</th>
+                    <th className="text-left py-2 px-3 text-cyrus-textSecondary font-semibold">TX Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1051,7 +1122,7 @@ export function BondingCurve() {
                         <td className="py-3 px-3 text-cyrus-textSecondary text-xs">{formatted.time}</td>
                         <td className="py-3 px-3 font-mono text-blue-400 text-xs hover:text-blue-300">
                           <a 
-                            href={`https://mainnet.mirrornode.hedera.com/explorer/transaction/${trade.txId}`}
+                            href={`https://hashscan.io/mainnet/transaction/${trade.txId}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:underline"
@@ -1065,6 +1136,16 @@ export function BondingCurve() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6">
+          <div className="text-center py-8">
+            <h2 className="text-xl font-bold text-cyrus-text mb-2">Recent Trades</h2>
+            <p className="text-cyrus-textSecondary mb-4">No trades yet</p>
+            <p className="text-sm text-cyrus-textSecondary">
+              Your trading history will appear here after you make your first buy or sell transaction.
+            </p>
           </div>
         </Card>
       )}
