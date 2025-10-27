@@ -5,9 +5,9 @@ import { VAULTS_CONFIG } from "@/config/hederaConfig";
 
 // App metadata for HashPack wallet connection
 const metadata = {
-  name: "Vistia TA Dashboard",
-  description: "AI-Powered Trading Platform",
-  icons: [`https://gist.githubusercontent.com/nguyenPhuocLoc99/d7309d2c19cc0351bc32a72d7dabb13d/raw/84a4a80d8dd6de140a8fbae80f6cd3e403930929/icon.svg`],
+  name: "VST-Sauce Bonding Curve",
+  description: "VST Token Bonding Curve Trading Platform",
+  icons: [`https://raw.githubusercontent.com/phungvanthien/vst-sauce-bonding_curve/main/vst-assets/logo-512.png`],
   url: typeof window !== 'undefined' ? window.location.origin : "http://localhost:5173"
 };
 
@@ -153,7 +153,8 @@ export class HashConnectManager {
       // Note: You need to get a real Project ID from https://www.hashpack.app/
       const projectId = import.meta.env.VITE_HASHCONNECT_PROJECT_ID || "demo-app-v1";
 
-
+      console.log("🔧 Initializing HashConnect with projectId:", projectId);
+      console.log("🔧 Metadata:", metadata);
 
       // Create the hashconnect instance for this user
       this.instance = new HashConnect(
@@ -175,11 +176,22 @@ export class HashConnectManager {
       this.setUpHashConnectEvents();
 
       // Initialize HashConnect
+      console.log("🚀 Calling HashConnect.init()...");
       await this.instance.init();
+      console.log("✅ HashConnect initialized successfully");
 
       return this.instance;
     } catch (error) {
-      console.error("Error initializing HashConnect:", error);
+      console.error("❌ Error initializing HashConnect:", error);
+      console.error("❌ Error details:", {
+        message: error.message,
+        stack: error.stack,
+        projectId: import.meta.env.VITE_HASHCONNECT_PROJECT_ID || "demo-app-v1",
+        metadata
+      });
+      
+      // Reset instance on error
+      this.instance = null;
       throw error;
     } finally {
       this.isInitializing = false;
@@ -191,15 +203,30 @@ export class HashConnectManager {
    * This is the manual connection flow where user clicks "Connect"
    */
   async initHashConnect(): Promise<void> {
-    const instance = await this.ensureHashConnectInitialized();
-    
-    // Check if we're already paired before opening the modal
-    if (this.connectionState === HashConnectConnectionState.Paired && this.pairingData) {
-      return;
+    try {
+      console.log("🔗 Starting HashConnect initialization...");
+      const instance = await this.ensureHashConnectInitialized();
+      
+      // Check if we're already paired before opening the modal
+      if (this.connectionState === HashConnectConnectionState.Paired && this.pairingData) {
+        console.log("✅ Already paired, skipping modal");
+        return;
+      }
+      
+      console.log("📱 Opening HashPack pairing modal...");
+      // Open pairing modal for user to connect
+      instance.openPairingModal();
+      console.log("✅ Pairing modal opened successfully");
+    } catch (error) {
+      console.error("❌ Error in initHashConnect:", error);
+      console.error("❌ Error details:", {
+        message: error.message,
+        stack: error.stack,
+        connectionState: this.connectionState,
+        hasPairingData: !!this.pairingData
+      });
+      throw error;
     }
-    
-    // Open pairing modal for user to connect
-    instance.openPairingModal();
   }
 
   /**

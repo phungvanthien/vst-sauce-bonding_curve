@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { HashPackConnect } from "@/components/HashPackConnect";
+import { HashConnectDebug } from "@/components/HashConnectDebug";
 import { toast } from "@/hooks/use-toast";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import LoadingModal from "@/modal/LoadingModal";
@@ -94,6 +95,9 @@ const Auth = () => {
               )}
             </div>
           </div>
+
+          {/* Debug Component */}
+          <HashConnectDebug />
 
           <p className="mt-4 text-center text-xs text-cyrus-textSecondary">
             By connecting your wallet, you agree to the Terms of Service and
